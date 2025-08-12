@@ -1,0 +1,185 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model usuarios {
+  id                 BigInt   @id @default(autoincrement())
+  correo_electronico String   @unique
+  nombre_usuario     String?
+  contrasena_hash    String
+  rol                String
+  fecha_creacion     DateTime @default(now())
+
+  // Relación: facturas emitidas por este usuario admin
+  facturas_emitidas facturas[] @relation("UsuarioAFacturas")
+
+  @@map("usuarios")
+}
+
+model clientes {
+  id                 BigInt  @id @default(autoincrement())
+  nombres            String
+  apellidos          String?
+  cedula             String?
+  correo_electronico String?
+  telefono           String?
+  direccion          String?
+
+  ordenes ordenes[]
+
+  @@map("clientes")
+}
+
+model sorteos {
+  id                BigInt    @id @default(autoincrement())
+  nombre            String
+  descripcion       String?
+  cantidad_digitos  Int
+  precio_por_numero Decimal
+  cantidad_premios  Int       @default(1)
+  fecha_inicio      DateTime?
+  fecha_fin         DateTime?
+  estado            String    @default("borrador")
+  fecha_creacion    DateTime  @default(now())
+
+  numeros_sorteo numeros_sorteo[]
+  premios        premios[]
+  paquetes       paquetes[]
+  ordenes        ordenes[]
+
+  @@map("sorteos")
+}
+
+model ordenes {
+  id               BigInt   @id @default(autoincrement())
+  codigo           String   @unique
+  cliente_id       BigInt?
+  metodo_pago      String?
+  metodo_pago_id   BigInt?
+  estado_pago      String   @default("pendiente")
+  ruta_comprobante String?
+  monto_total      Decimal?
+  cantidad_numeros Int?
+  fecha_creacion   DateTime @default(now())
+
+  cliente clientes?        @relation(fields: [cliente_id], references: [id])
+  items   ordenes_items[]
+  factura facturas?        @relation("OrdenAFactura")
+  numeros numeros_sorteo[]
+
+  sorteo_id BigInt?
+  sorteo    sorteos? @relation(fields: [sorteo_id], references: [id])
+
+  metodo_pago_ref metodos_pago? @relation(fields: [metodo_pago_id], references: [id])
+
+  @@map("ordenes")
+}
+
+model numeros_sorteo {
+  id             BigInt   @id @default(autoincrement())
+  sorteo_id      BigInt
+  numero_texto   String
+  estado         String   @default("disponible")
+  orden_id       BigInt?
+  fecha_creacion DateTime @default(now())
+
+  sorteo sorteos  @relation(fields: [sorteo_id], references: [id], onDelete: Cascade)
+  orden  ordenes? @relation(fields: [orden_id], references: [id], onDelete: SetNull)
+
+  premios premios[]
+  // Relación inversa hacia ordenes_items
+  items   ordenes_items[] @relation("NumeroAItem")
+
+  @@unique([sorteo_id, numero_texto])
+  @@index([sorteo_id, estado], name: "idx_numeros_estado")
+  @@map("numeros_sorteo")
+}
+
+model premios {
+  id               BigInt   @id @default(autoincrement())
+  sorteo_id        BigInt
+  descripcion      String
+  numero_sorteo_id BigInt?
+  fecha_creacion   DateTime @default(now())
+
+  sorteo        sorteos         @relation(fields: [sorteo_id], references: [id], onDelete: Cascade)
+  numero_sorteo numeros_sorteo? @relation(fields: [numero_sorteo_id], references: [id], onDelete: SetNull)
+
+  @@unique([sorteo_id, numero_sorteo_id], map: "idx_premios_numero_unico_por_sorteo")
+  @@index([sorteo_id])
+  @@map("premios")
+}
+
+model paquetes {
+  id                   BigInt   @id @default(autoincrement())
+  sorteo_id            BigInt
+  nombre               String?
+  descripcion          String?
+  cantidad_numeros     Int?
+  porcentaje_descuento Decimal?
+  precio_total         Decimal?
+  estado               String   @default("borrador")
+
+  sorteo sorteos @relation(fields: [sorteo_id], references: [id], onDelete: Cascade)
+
+  @@map("paquetes")
+}
+
+model metodos_pago {
+  id             BigInt   @id @default(autoincrement())
+  nombre         String
+  tipo           String?
+  activo         Boolean  @default(true)
+  detalles       Json?
+  fecha_creacion DateTime @default(now())
+
+  ordenes ordenes[]
+
+  @@map("metodos_pago")
+}
+
+model ordenes_items {
+  id               BigInt  @id @default(autoincrement())
+  orden_id         BigInt
+  numero_sorteo_id BigInt
+  precio           Decimal
+
+  orden  ordenes        @relation(fields: [orden_id], references: [id], onDelete: Cascade)
+  numero numeros_sorteo @relation("NumeroAItem", fields: [numero_sorteo_id], references: [id])
+
+  @@map("ordenes_items")
+}
+
+model verificaciones_correo {
+  id                 BigInt   @id @default(autoincrement())
+  correo_electronico String
+  codigo             String
+  verificado         Boolean  @default(false)
+  usado              Boolean  @default(false)
+  expiracion         DateTime
+  fecha_creacion     DateTime @default(now())
+
+  @@index([correo_electronico, verificado, usado])
+  @@map("verificaciones_correo")
+}
+
+model facturas {
+  id               BigInt   @id @default(autoincrement())
+  orden_id         BigInt   @unique
+  usuario_admin_id BigInt
+  ruta_factura     String?
+  datos_factura    Json?
+  fecha_creacion   DateTime @default(now())
+
+  // Relación 1:1 con ordenes (única por orden)
+  orden   ordenes  @relation("OrdenAFactura", fields: [orden_id], references: [id])
+  // Relación N:1 con usuarios (admin que emite factura)
+  usuario usuarios @relation("UsuarioAFacturas", fields: [usuario_admin_id], references: [id])
+
+  @@map("facturas")
+}
