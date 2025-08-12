@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Animación de flotación suave para el logo */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); filter: drop-shadow(0 2px 8px rgba(255,255,255,0.1)); }
+  50% { transform: translateY(-4px); filter: drop-shadow(0 4px 12px rgba(255,255,255,0.2)); }
+}
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* CTA brillante y pulsante para mejorar conversión */
+@keyframes cta-glow {
+  0%, 100% { box-shadow: 0 0 0 rgba(244,63,94,0.0), 0 0 0 rgba(244,63,94,0.0); }
+  50% { box-shadow: 0 0 24px rgba(244,63,94,0.35), 0 0 48px rgba(244,63,94,0.15); }
+}
+.btn-cta {
+  background-image: linear-gradient(90deg, #e11d48, #fb7185, #e11d48);
+  background-size: 200% 100%;
+  color: white;
+  border-radius: 0.5rem;
+  transition: transform 200ms ease, background-position 400ms ease, filter 200ms ease;
+  animation: cta-glow 2.4s ease-in-out infinite;
+}
+.btn-cta:hover { background-position: 100% 0; transform: translateY(-1px) scale(1.01); filter: saturate(1.1); }
+.btn-cta:active { transform: translateY(0); }
+
+/* Tarjetas de promoción con hover llamativo */
+.card-prom {
+  transition: transform 220ms ease, box-shadow 220ms ease, background-color 220ms ease;
+}
+.card-prom:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.25); background-color: rgba(255,255,255,0.08); }
+
+/* Badge ahorros */
+.badge-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.7rem;
+  border-radius: 9999px;
+  background: rgba(16,185,129,0.18);
+  color: #34d399;
+  border: 1px solid rgba(52,211,153,0.25);
+}
+
+/* Animaciones de aparición al hacer scroll */
+.reveal-up { opacity: 0; transform: translateY(12px); transition: opacity 600ms ease, transform 600ms ease; }
+.reveal-up.is-visible { opacity: 1; transform: translateY(0); }

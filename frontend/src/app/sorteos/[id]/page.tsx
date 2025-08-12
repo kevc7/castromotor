@@ -1,0 +1,330 @@
+"use client";
+
+import React, { useEffect, useMemo, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001";
+
+export default function SorteoDetailPage() {
+  const params = useParams<{ id: string }>();
+  const sorteoId = params?.id;
+  const [loading, setLoading] = useState(true);
+  const [sorteo, setSorteo] = useState<any>(null);
+  const [paquetes, setPaquetes] = useState<any[]>([]);
+  const [conteos, setConteos] = useState<any>(null);
+  const [cliente, setCliente] = useState({ nombres: "", apellidos: "", cedula: "", correo_electronico: "", telefono: "", direccion: "" });
+  const [cantidad, setCantidad] = useState<number>(1);
+  const [paqueteId, setPaqueteId] = useState<number | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [msgType, setMsgType] = useState<'success' | 'error' | null>(null);
+  const [metodos, setMetodos] = useState<any[]>([]);
+  const [metodoPagoId, setMetodoPagoId] = useState<number | null>(null);
+  const [verificationId, setVerificationId] = useState<number | null>(null);
+  const [verificationCode, setVerificationCode] = useState<string>("");
+  const [verifMsg, setVerifMsg] = useState<string | null>(null);
+  const [isVerified, setIsVerified] = useState<boolean>(false);
+  const [sendingCode, setSendingCode] = useState<boolean>(false);
+  const [verifying, setVerifying] = useState<boolean>(false);
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [expiresAt, setExpiresAt] = useState<number | null>(null);
+  const [remaining, setRemaining] = useState<number>(0);
+
+  useEffect(() => {
+    (async () => {
+      if (!sorteoId) return;
+      const res = await fetch(`${API_BASE}/api/sorteos/${sorteoId}`);
+      const data = await res.json();
+      setSorteo(data.sorteo);
+      setPaquetes(data.paquetes || []);
+      setConteos(data.conteos);
+      setLoading(false);
+    })();
+    (async () => {
+      const r = await fetch(`${API_BASE}/api/metodos_pago`);
+      const d = await r.json();
+      setMetodos(d.metodos || []);
+      if (d.metodos?.length) setMetodoPagoId(Number(d.metodos[0].id));
+    })();
+  }, [sorteoId]);
+
+  // Preseleccionar paquete si viene en query
+  const search = useSearchParams();
+  useEffect(() => {
+    const pid = search?.get('paqueteId');
+    if (pid) setPaqueteId(Number(pid));
+    const cant = search?.get('cantidad');
+    if (cant) setCantidad(Math.max(1, Number(cant)));
+  }, [search]);
+
+  const precioUnitario = useMemo(() => Number(sorteo?.precio_por_numero || 0), [sorteo]);
+  const paqueteSeleccionado = useMemo(() => paquetes.find((p) => Number(p.id) === Number(paqueteId)), [paquetes, paqueteId]);
+  const precioSinDesc = useMemo(() => {
+    if (paqueteSeleccionado) return precioUnitario * Number(paqueteSeleccionado.cantidad_numeros || 0);
+    return precioUnitario * cantidad;
+  }, [precioUnitario, paqueteSeleccionado, cantidad]);
+  const precioConDesc = useMemo(() => {
+    if (paqueteSeleccionado) return Number(paqueteSeleccionado.precio_total || 0);
+    return precioUnitario * cantidad;
+  }, [precioUnitario, paqueteSeleccionado, cantidad]);
+
+  async function crearOrdenCompleta(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      setMsg(null);
+      setMsgType(null);
+      // Validación rápida en cliente contra disponibles
+      const solicitados = paqueteSeleccionado ? Number(paqueteSeleccionado.cantidad_numeros || 0) : Number(cantidad || 0);
+      if (conteos && solicitados > Number(conteos.disponibles || 0)) {
+        throw new Error(`Solo quedan ${conteos.disponibles} números disponibles para este sorteo`);
+      }
+      if (!file) throw new Error("Sube tu comprobante de pago");
+      if (!metodoPagoId) throw new Error("Selecciona un método de pago");
+      if (!verificationId || verificationCode.length !== 3) throw new Error("Verifica tu correo con el código de 3 dígitos");
+      // Auto-verificar si aún no está verificado
+      if (!isVerified) {
+        setVerifying(true);
+        const resVer = await fetch(`${API_BASE}/api/verificaciones/verificar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ verification_id: verificationId, codigo: verificationCode })
+        });
+        const dVer = await resVer.json();
+        if (!resVer.ok) throw new Error(dVer?.error || 'Código de verificación inválido');
+        setIsVerified(true);
+      }
+      setSubmitting(true);
+      const form = new FormData();
+      form.append("nombres", cliente.nombres);
+      form.append("apellidos", cliente.apellidos);
+      form.append("cedula", cliente.cedula);
+      form.append("correo_electronico", cliente.correo_electronico);
+      form.append("telefono", cliente.telefono);
+      form.append("direccion", cliente.direccion);
+      form.append("verification_id", String(verificationId));
+      form.append("verification_code", verificationCode);
+      form.append("sorteo_id", String(sorteoId));
+      if (paqueteId) form.append("paquete_id", String(paqueteId));
+      else form.append("cantidad_numeros", String(cantidad));
+      form.append("metodo_pago_id", String(metodoPagoId));
+      form.append("file", file);
+      const res = await fetch(`${API_BASE}/api/orders/complete`, { method: 'POST', body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Error creando la orden');
+      setMsg("¡Tu orden fue generada con éxito! Un administrador la revisará y te llegará un correo con el resultado.");
+      setMsgType('success');
+      // Limpiar formulario y comprobante
+      setCliente({ nombres: "", apellidos: "", cedula: "", correo_electronico: "", telefono: "", direccion: "" });
+      setVerificationId(null);
+      setVerificationCode("");
+      setIsVerified(false);
+      setVerifMsg(null);
+      setFile(null);
+      setPaqueteId(null);
+      setCantidad(1);
+      // Scroll a arriba para ver el mensaje
+      if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (e: any) {
+      setMsg(e?.message || 'Error creando la orden');
+      setMsgType('error');
+    } finally {
+      setSubmitting(false);
+      setVerifying(false);
+    }
+  }
+
+  async function solicitarCodigo() {
+    try {
+      setVerifMsg(null);
+      setIsVerified(false);
+      setSendingCode(true);
+      if (!cliente.correo_electronico) throw new Error("Ingresa tu correo primero");
+      const res = await fetch(`${API_BASE}/api/verificaciones/solicitar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ correo_electronico: cliente.correo_electronico })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'No se pudo enviar el código');
+      setVerificationId(Number(data.verification_id));
+      setExpiresAt(Date.now() + 10 * 60 * 1000);
+      setVerificationCode("");
+      setVerifMsg("Código enviado a tu correo. Revisa tu bandeja (vigente 10 minutos)");
+    } catch (e: any) {
+      setVerifMsg(e?.message || 'Error enviando el código');
+    } finally {
+      setSendingCode(false);
+    }
+  }
+
+  async function verificarCodigo() {
+    try {
+      setVerifMsg(null);
+      setVerifying(true);
+      if (!verificationId || verificationCode.length !== 3) throw new Error('Ingresa el código de 3 dígitos');
+      const res = await fetch(`${API_BASE}/api/verificaciones/verificar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ verification_id: verificationId, codigo: verificationCode })
+    });
+    const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Código inválido');
+      setIsVerified(true);
+      setVerifMsg('Código verificado');
+    } catch (e: any) {
+      setIsVerified(false);
+      setVerifMsg(e?.message || 'No se pudo verificar el código');
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  // Countdown para expiración
+  useEffect(() => {
+    if (!expiresAt) return;
+    const id = setInterval(() => {
+      const left = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+      setRemaining(left);
+      if (left === 0) {
+        setIsVerified(false);
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [expiresAt]);
+
+  return (
+    <main className="min-h-screen bg-[#0f1725] text-white">
+      <div className="px-4 sm:px-6 pt-6 sm:pt-8 pb-6 max-w-5xl mx-auto">
+        {loading ? (
+          <div className="text-sm text-slate-600">Cargando...</div>
+        ) : (
+          <>
+            <h1 className="text-3xl font-bold tracking-tight">{sorteo?.nombre}</h1>
+            <p className="text-slate-300 mt-1">{sorteo?.descripcion}</p>
+            {conteos && (
+              <div className="mt-3 text-sm text-slate-700">Disponibles: {conteos.disponibles} / {conteos.total}</div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6 sm:mt-8">
+              <section className="p-4 sm:p-5 rounded-xl border border-white/10 bg-white/5 shadow-sm md:col-span-2">
+                <h2 className="text-lg font-semibold mb-3">{paqueteSeleccionado ? 'Compra de promoción' : 'Compra por cantidad'}</h2>
+                {paqueteSeleccionado ? (
+                  <div className="p-4 rounded-xl border border-white/10 bg-black/30 mb-4">
+                    <div className="text-sm text-slate-200">{paqueteSeleccionado.nombre || `${paqueteSeleccionado.cantidad_numeros} tickets`}</div>
+                    <div className="text-xs font-semibold text-emerald-400">Incluye {paqueteSeleccionado.cantidad_numeros} tickets</div>
+                    <div className="text-rose-400 text-xl font-bold">${Number(paqueteSeleccionado.precio_total || 0).toFixed(2)}</div>
+                    <div className="text-xs text-slate-400 line-through">${(precioUnitario * Number(paqueteSeleccionado.cantidad_numeros || 0)).toFixed(2)}</div>
+                  </div>
+                ) : (
+                  <div className="p-3 sm:p-4 rounded-lg border border-white/10 bg-white/5">
+                    <div className="text-sm text-slate-300 mb-1">Cantidad de números</div>
+                    <input type="number" min={1} value={cantidad} onChange={(e) => setCantidad(Number(e.target.value))} className="border border-white/10 bg-black/30 rounded-md px-3 py-2 w-full text-white" />
+                    <div className="text-xs text-slate-400 mt-2">Precio estimado: ${(precioUnitario * cantidad).toFixed(2)}</div>
+                </div>
+                )}
+
+                <div className="mt-6">
+                  <h3 className="text-lg font-semibold mb-2">Tus datos</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="grid gap-1">
+                      <span className="text-xs text-slate-400">Nombres</span>
+                      <input required className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" value={cliente.nombres} onChange={(e) => setCliente({ ...cliente, nombres: e.target.value })} />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs text-slate-400">Apellidos</span>
+                      <input required className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" value={cliente.apellidos} onChange={(e) => setCliente({ ...cliente, apellidos: e.target.value })} />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs text-slate-400">Cédula</span>
+                      <input required className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" value={cliente.cedula} onChange={(e) => setCliente({ ...cliente, cedula: e.target.value })} />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs text-slate-400">Correo</span>
+                      <div className="flex gap-2">
+                        <input required type="email" className="flex-1 border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" value={cliente.correo_electronico} onChange={(e) => setCliente({ ...cliente, correo_electronico: e.target.value })} />
+                        <button type="button" onClick={solicitarCodigo} disabled={sendingCode} className={`px-3 py-2 rounded-md text-white text-sm whitespace-nowrap ${sendingCode ? 'bg-rose-700/60 cursor-not-allowed animate-pulse' : 'bg-rose-600 hover:bg-rose-700'}`}>{sendingCode ? 'Enviando…' : 'Enviar código'}</button>
+                      </div>
+                      {verifMsg && (
+                        <span className={`text-xs ${isVerified ? 'text-emerald-400' : 'text-amber-300'}`}>
+                          {verifMsg}
+                          {expiresAt && remaining > 0 && (
+                            <>
+                              {" "}(expira en {Math.floor(remaining/60)}:{String(remaining%60).padStart(2,'0')})
+                            </>
+                          )}
+                          {expiresAt && remaining === 0 && ' (expirado)'}
+                        </span>
+                      )}
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs text-slate-400">Teléfono</span>
+                      <input required className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" value={cliente.telefono} onChange={(e) => setCliente({ ...cliente, telefono: e.target.value })} />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-xs text-slate-400">Código de verificación</span>
+                      <div className="flex gap-2">
+                        <input required maxLength={3} placeholder="___" className="flex-1 border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white tracking-widest" value={verificationCode} onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0,3))} />
+                        <button type="button" onClick={verificarCodigo} disabled={verifying || !verificationId || verificationCode.length !== 3} className={`px-3 py-2 rounded-md text-white text-sm whitespace-nowrap ${verifying ? 'bg-emerald-700/60 cursor-not-allowed animate-pulse' : 'bg-emerald-600 hover:bg-emerald-700'}`}>{verifying ? 'Verificando…' : 'Verificar'}</button>
+                      </div>
+                    </label>
+                    <label className="grid gap-1 md:col-span-1">
+                      <span className="text-xs text-slate-400">Dirección</span>
+                      <input required className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" value={cliente.direccion} onChange={(e) => setCliente({ ...cliente, direccion: e.target.value })} />
+                    </label>
+                  </div>
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg border border-white/10 bg-white/5">
+                  <div className="text-sm font-medium mb-2 text-white">Método de pago</div>
+                  {metodos.length === 0 && <div className="text-sm text-slate-400">Pronto habilitaremos métodos disponibles…</div>}
+                  <div className="grid gap-3">
+                    {metodos.map((m) => (
+                      <label key={m.id} className="block rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-slate-200">
+                        <div className="flex items-center gap-2">
+                          <input type="radio" name="metodo" value={m.id} checked={Number(metodoPagoId) === Number(m.id)} onChange={() => setMetodoPagoId(Number(m.id))} />
+                          <span className="font-medium">{m.nombre}</span>
+                        </div>
+                        {m.detalles && (
+                          <div className="mt-2 text-xs text-slate-300 grid sm:grid-cols-3 gap-2">
+                            {m.detalles.numero_cuenta && <div><span className="text-slate-400">Cuenta:</span> {m.detalles.numero_cuenta}</div>}
+                            {m.detalles.tipo_cuenta && <div><span className="text-slate-400">Tipo:</span> {m.detalles.tipo_cuenta}</div>}
+                            {m.detalles.titular && <div className="sm:col-span-3"><span className="text-slate-400">Titular:</span> {m.detalles.titular}</div>}
+                          </div>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="p-3 rounded-lg border border-white/10 bg-white/5">
+                  <div className="text-sm font-medium mb-2 text-white">Comprobante de pago</div>
+                  <input className="text-sm" type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+                     <div className="text-xs text-slate-300 mt-2">Total a pagar: <span className="font-semibold text-white">${precioConDesc.toFixed(2)}</span> {paqueteSeleccionado && <span className="line-through ml-2 text-slate-400">${precioSinDesc.toFixed(2)}</span>}</div>
+                </div>
+              </div>
+              <button onClick={crearOrdenCompleta} disabled={submitting} className={`mt-4 w-full sm:w-auto px-4 py-2 rounded-md text-white ${submitting ? 'bg-rose-700/60 cursor-not-allowed animate-pulse' : 'bg-rose-600 hover:bg-rose-700'}`}>{submitting ? 'Generando orden…' : 'Confirmar compra'}</button>
+                </div>
+              </section>
+
+              <section className="p-4 sm:p-5 rounded-xl border border-white/10 bg-white/5 shadow-sm">
+            <h2 className="text-lg font-semibold mb-3">Resumen</h2>
+            <div className="text-sm text-slate-200 space-y-1">
+              <div>Sorteo: {sorteo?.nombre}</div>
+              <div>Opción: {paqueteSeleccionado ? `${paqueteSeleccionado.cantidad_numeros} tickets (paquete)` : `${cantidad} tickets`}</div>
+              <div>Total: ${precioConDesc.toFixed(2)} {paqueteSeleccionado && <span className="line-through ml-1 text-slate-400">${precioSinDesc.toFixed(2)}</span>}</div>
+              <div className={`${isVerified ? 'text-emerald-400' : 'text-amber-300'}`}>{isVerified ? 'Código verificado' : 'Código no verificado'}</div>
+                  </div>
+            {msg && (
+              <div className={`mt-3 rounded-lg p-3 text-sm ${msgType === 'success' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'}`}>{msg}</div>
+                )}
+            <div className="mt-3 text-xs text-slate-400">
+              <a href="/" className="underline hover:text-white">Volver a la página principal</a>
+            </div>
+              </section>
+            </div>
+          </>
+        )}
+      </div>
+    </main>
+  );
+}
+
+
