@@ -118,7 +118,6 @@ export default function HomePage() {
             <p className="mt-4 text-slate-300">Elige tu sorteo favorito, compra tickets o ahorra con paquetes especiales. ¡Las cantidades vuelan!</p>
             <div className="mt-6 flex gap-3">
               <Link href="#sorteos-premiados" className="px-5 py-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white">Comprar tickets</Link>
-              <Link href="#paquetes" className="px-5 py-3 rounded-lg bg-white/10 hover:bg-white/20 text-white">Ver paquetes</Link>
             </div>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/5 p-6 reveal-up">

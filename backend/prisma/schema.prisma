@@ -72,6 +72,9 @@ model ordenes {
   factura facturas?        @relation("OrdenAFactura")
   numeros numeros_sorteo[]
 
+  // Relación 1:1 con pagos_payphone (opcional)
+  pago_payphone pagos_payphone? @relation("OrdenAPagoPayphone")
+
   sorteo_id BigInt?
   sorteo    sorteos? @relation(fields: [sorteo_id], references: [id])
 
@@ -182,4 +185,21 @@ model facturas {
   usuario usuarios @relation("UsuarioAFacturas", fields: [usuario_admin_id], references: [id])
 
   @@map("facturas")
+}
+
+/// Auditoría e idempotencia de pagos con Payphone
+model pagos_payphone {
+  id              BigInt   @id @default(autoincrement())
+  orden_id        BigInt   @unique
+  orden           ordenes  @relation("OrdenAPagoPayphone", fields: [orden_id], references: [id])
+  client_txn_id   String   @unique
+  payphone_txn_id String?
+  status          String
+  amount          Decimal  @db.Decimal(10, 2)
+  raw             Json?
+  expires_at      DateTime?
+  confirmed_at    DateTime?
+  fecha_creacion  DateTime @default(now())
+
+  @@map("pagos_payphone")
 }

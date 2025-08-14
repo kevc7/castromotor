@@ -9,6 +9,8 @@ export default function AdminMetodosPagoPage() {
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ nombre: "", tipo: "transferencia", activo: true, numero_cuenta: "", tipo_cuenta: "Ahorros", titular: "" });
   const [msg, setMsg] = useState<string | null>(null);
+  const [edit, setEdit] = useState<any | null>(null);
+  const [saving, setSaving] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -37,6 +39,24 @@ export default function AdminMetodosPagoPage() {
     setForm({ nombre: "", tipo: "transferencia", activo: true, numero_cuenta: "", tipo_cuenta: "Ahorros", titular: "" });
     await load();
     setMsg('Método creado');
+  }
+
+  async function toggleActivo(id: any, activo: boolean) {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
+    await fetch(`${API_BASE}/api/admin/metodos_pago`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ id, activo: !activo, actualizar: true }) });
+    await load();
+  }
+
+  async function guardarEdicion() {
+    if (!edit) return;
+    setSaving(true);
+    const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
+    const body = { id: edit.id, nombre: edit.nombre, tipo: edit.tipo, activo: edit.activo, detalles: { numero_cuenta: edit.detalles?.numero_cuenta || '', tipo_cuenta: edit.detalles?.tipo_cuenta || '', titular: edit.detalles?.titular || '' }, actualizar: true };
+    const res = await fetch(`${API_BASE}/api/admin/metodos_pago`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
+    setSaving(false);
+    if (res.status === 401) { window.location.href = '/admin/login'; return; }
+    setEdit(null);
+    await load();
   }
 
   return (
@@ -93,14 +113,44 @@ export default function AdminMetodosPagoPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
               {metodos.map((m) => (
                 <div key={m.id} className="rounded-lg border border-white/10 bg-black/20 p-4">
-                  <div className="text-sm font-medium">{m.nombre}</div>
-                  <div className="text-xs text-slate-300">{m.tipo} — {m.activo ? 'activo' : 'inactivo'}</div>
-                  {m.detalles && (
-                    <div className="mt-2 text-xs text-slate-300 space-y-1">
-                      {m.detalles.numero_cuenta && <div><span className="text-slate-400">Cuenta:</span> {m.detalles.numero_cuenta}</div>}
-                      {m.detalles.tipo_cuenta && <div><span className="text-slate-400">Tipo:</span> {m.detalles.tipo_cuenta}</div>}
-                      {m.detalles.titular && <div><span className="text-slate-400">Titular:</span> {m.detalles.titular}</div>}
+                  {edit?.id === m.id ? (
+                    <div className="space-y-2">
+                      <input className="w-full rounded-md border border-white/10 bg-black/30 px-2 py-1 text-sm" value={edit.nombre} onChange={(e) => setEdit({ ...edit, nombre: e.target.value })} />
+                      <select className="w-full rounded-md border border-white/10 bg-black/30 px-2 py-1 text-sm" value={edit.tipo} onChange={(e) => setEdit({ ...edit, tipo: e.target.value })}>
+                        <option value="transferencia">transferencia</option>
+                        <option value="deposito">deposito</option>
+                        <option value="gateway">gateway</option>
+                      </select>
+                      <div className="grid grid-cols-1 gap-2 text-xs">
+                        <input className="rounded-md border border-white/10 bg-black/30 px-2 py-1" placeholder="Número de cuenta" value={edit.detalles?.numero_cuenta || ''} onChange={(e) => setEdit({ ...edit, detalles: { ...(edit.detalles || {}), numero_cuenta: e.target.value } })} />
+                        <input className="rounded-md border border-white/10 bg-black/30 px-2 py-1" placeholder="Tipo de cuenta" value={edit.detalles?.tipo_cuenta || ''} onChange={(e) => setEdit({ ...edit, detalles: { ...(edit.detalles || {}), tipo_cuenta: e.target.value } })} />
+                        <input className="rounded-md border border-white/10 bg-black/30 px-2 py-1" placeholder="Titular" value={edit.detalles?.titular || ''} onChange={(e) => setEdit({ ...edit, detalles: { ...(edit.detalles || {}), titular: e.target.value } })} />
+                      </div>
+                      <div className="flex items-center justify-end gap-2">
+                        <button className="px-3 py-1 rounded-md border border-white/10 bg-white/5 hover:bg-white/10 text-xs" onClick={() => setEdit(null)} disabled={saving}>Cancelar</button>
+                        <button className="px-3 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-xs" onClick={guardarEdicion} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</button>
+                      </div>
                     </div>
+                  ) : (
+                    <>
+                      <div className="text-sm font-medium flex items-center justify-between">
+                        <span>{m.nombre}</span>
+                        <button className={`px-2 py-0.5 rounded-full text-xs ${m.activo ? 'bg-emerald-600/20 text-emerald-300' : 'bg-slate-600/20 text-slate-300'}`} onClick={() => toggleActivo(m.id, m.activo)}>
+                          {m.activo ? 'Desactivar' : 'Activar'}
+                        </button>
+                      </div>
+                      <div className="text-xs text-slate-300">{m.tipo} — {m.activo ? 'activo' : 'inactivo'}</div>
+                      {m.detalles && (
+                        <div className="mt-2 text-xs text-slate-300 space-y-1">
+                          {m.detalles.numero_cuenta && <div><span className="text-slate-400">Cuenta:</span> {m.detalles.numero_cuenta}</div>}
+                          {m.detalles.tipo_cuenta && <div><span className="text-slate-400">Tipo:</span> {m.detalles.tipo_cuenta}</div>}
+                          {m.detalles.titular && <div><span className="text-slate-400">Titular:</span> {m.detalles.titular}</div>}
+                        </div>
+                      )}
+                      <div className="mt-2 text-right">
+                        <button className="px-3 py-1 rounded-md border border-white/10 bg-white/5 hover:bg-white/10 text-xs" onClick={() => setEdit(m)}>Editar</button>
+                      </div>
+                    </>
                   )}
                 </div>
               ))}

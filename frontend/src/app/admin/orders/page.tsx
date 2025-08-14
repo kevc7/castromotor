@@ -61,6 +61,34 @@ export default function AdminOrdersPage() {
     alert("Orden aprobada");
   }
 
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectId, setRejectId] = useState<string | number | null>(null);
+  const [rejectMotivo, setRejectMotivo] = useState("");
+  const [rejectLoading, setRejectLoading] = useState(false);
+
+  function abrirRechazo(ordenId: string | number) {
+    setRejectId(ordenId);
+    setRejectMotivo("");
+    setRejectOpen(true);
+  }
+
+  async function confirmarRechazo() {
+    if (!rejectId) return;
+    setError(null);
+    setRejectLoading(true);
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
+      const res = await fetch(`${API_BASE}/api/admin/orders/${rejectId}/reject`, { method: "POST", headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), 'Content-Type': 'application/json' }, body: JSON.stringify({ motivo: rejectMotivo }) });
+      if (res.status === 401) { window.location.href = '/admin/login'; return; }
+      const data = await res.json();
+      if (!res.ok) { alert(data?.error || 'Error al rechazar'); return; }
+      await cargarPendientes();
+      setRejectOpen(false);
+    } finally {
+      setRejectLoading(false);
+    }
+  }
+
   const [openId, setOpenId] = useState<string | number | null>(null);
 
   function toggle(oid: string | number) {
@@ -126,6 +154,7 @@ export default function AdminOrdersPage() {
                 <div className="flex items-center gap-2">
                   <button onClick={() => toggle(o.id)} className="px-3 py-2 rounded-md bg-white/10 hover:bg-white/20">{String(openId) === String(o.id) ? 'Ocultar' : 'Ver detalles'}</button>
                   <button onClick={() => aprobar(o.id)} className="px-3 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-700">Aprobar</button>
+                  <button onClick={() => abrirRechazo(o.id)} className="px-3 py-2 rounded-md bg-rose-600 text-white hover:bg-rose-700">Rechazar</button>
                 </div>
               </div>
 
@@ -171,6 +200,24 @@ export default function AdminOrdersPage() {
           ))}
         </div>
       </div>
+
+      {rejectOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !rejectLoading && setRejectOpen(false)} />
+          <div className="relative w-full max-w-md mx-4 rounded-2xl border border-white/10 bg-white/5 p-5 text-white shadow-xl">
+            <div className="text-lg font-semibold">Rechazar orden</div>
+            <div className="mt-2 text-sm text-slate-300">Escribe el motivo para notificar al cliente (opcional).</div>
+            <textarea className="mt-3 w-full h-28 resize-none rounded-md border border-white/10 bg-black/30 p-3 text-sm outline-none focus:ring-1 focus:ring-rose-500" placeholder="Motivo de rechazo" value={rejectMotivo} onChange={(e) => setRejectMotivo(e.target.value)} disabled={rejectLoading} />
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button onClick={() => setRejectOpen(false)} disabled={rejectLoading} className="px-3 py-2 rounded-md border border-white/10 bg-white/10 hover:bg-white/20 text-sm">Cancelar</button>
+              <button onClick={confirmarRechazo} disabled={rejectLoading} className="px-3 py-2 rounded-md bg-rose-600 hover:bg-rose-700 text-sm font-medium inline-flex items-center gap-2">
+                {rejectLoading && <span className="inline-block h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />}
+                Confirmar rechazo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

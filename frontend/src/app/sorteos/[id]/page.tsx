@@ -29,6 +29,7 @@ export default function SorteoDetailPage() {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const [remaining, setRemaining] = useState<number>(0);
+  const [payOpening, setPayOpening] = useState<boolean>(false);
 
   useEffect(() => {
     (async () => {
@@ -300,7 +301,66 @@ export default function SorteoDetailPage() {
                      <div className="text-xs text-slate-300 mt-2">Total a pagar: <span className="font-semibold text-white">${precioConDesc.toFixed(2)}</span> {paqueteSeleccionado && <span className="line-through ml-2 text-slate-400">${precioSinDesc.toFixed(2)}</span>}</div>
                 </div>
               </div>
-              <button onClick={crearOrdenCompleta} disabled={submitting} className={`mt-4 w-full sm:w-auto px-4 py-2 rounded-md text-white ${submitting ? 'bg-rose-700/60 cursor-not-allowed animate-pulse' : 'bg-rose-600 hover:bg-rose-700'}`}>{submitting ? 'Generando orden…' : 'Confirmar compra'}</button>
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button onClick={crearOrdenCompleta} disabled={submitting} className={`w-full sm:w-auto px-4 py-2 rounded-md text-white ${submitting ? 'bg-rose-700/60 cursor-not-allowed animate-pulse' : 'bg-rose-600 hover:bg-rose-700'}`}>{submitting ? 'Generando orden…' : 'Confirmar compra'}</button>
+                <button
+                  onClick={async () => {
+                    try {
+                      setMsg(null); setMsgType(null);
+                      const solicitados = paqueteSeleccionado ? Number(paqueteSeleccionado.cantidad_numeros || 0) : Number(cantidad || 0);
+                      if (conteos && solicitados > Number(conteos.disponibles || 0)) throw new Error(`Solo quedan ${conteos.disponibles} números disponibles`);
+                      if (!cliente.correo_electronico || !cliente.nombres) throw new Error('Completa tus datos básicos (nombres y correo)');
+                      setPayOpening(true);
+                      const r = await fetch(`${API_BASE}/api/payments/payphone/init`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          nombres: cliente.nombres,
+                          apellidos: cliente.apellidos,
+                          cedula: cliente.cedula,
+                          correo_electronico: cliente.correo_electronico,
+                          telefono: cliente.telefono,
+                          direccion: cliente.direccion,
+                          sorteo_id: Number(sorteoId),
+                          paquete_id: paqueteId ? Number(paqueteId) : undefined,
+                          cantidad_numeros: paqueteId ? undefined : Number(cantidad)
+                        })
+                      });
+                      const d = await r.json();
+                      if (!r.ok) throw new Error(d?.error || 'No se pudo iniciar Payphone');
+                      const payload = d?.payload;
+                      const storeId = payload?.storeId;
+                      const amount = payload?.amount; // centavos
+                      const clientTransactionId = payload?.clientTransactionId;
+                      const responseUrl = payload?.responseUrl;
+                      // Abrir cajita Payphone inline
+                      // @ts-ignore
+                      if (window?.PayPhone?.Button) {
+                        // @ts-ignore
+                        window.PayPhone.Button({
+                          token: '', // el SDK usará la configuración del store; el backend confirma con TOKEN
+                          amount: amount,
+                          clientTransactionId,
+                          storeId,
+                          responseUrl,
+                          email: cliente.correo_electronico,
+                          phoneNumber: cliente.telefono,
+                        }).open();
+                      } else {
+                        // fallback: redirigir a return
+                        window.location.href = `/pagos/payphone/return?clientTransactionId=${encodeURIComponent(clientTransactionId)}`;
+                      }
+                    } catch (e: any) {
+                      setMsg(e?.message || 'Error iniciando Payphone');
+                      setMsgType('error');
+                    } finally {
+                      setPayOpening(false);
+                    }
+                  }}
+                  className="w-full sm:w-auto px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white"
+                >
+                  {payOpening ? 'Abriendo Payphone…' : 'Pagar con Payphone'}
+                </button>
+              </div>
                 </div>
               </section>
 

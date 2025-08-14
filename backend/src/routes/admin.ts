@@ -135,6 +135,19 @@ adminRouter.post('/metodos_pago/seed', requireAuth, async (_req, res, next) => {
   }
 });
 
+// Asegurar método de pago Payphone presente (idempotente)
+adminRouter.post('/metodos_pago/seed-payphone', requireAuth, async (_req, res, next) => {
+  try {
+    const storeId = process.env.PAYPHONE_STORE_ID || null;
+    const existente = await (prisma as any).metodos_pago.findFirst({ where: { nombre: 'Payphone' } });
+    if (existente) {
+      await (prisma as any).metodos_pago.update({ where: { id: existente.id }, data: { tipo: 'gateway', activo: true, detalles: { storeId } } });
+      return res.json({ metodo: { ...existente, detalles: { storeId } } });
+    }
+    const creado = await (prisma as any).metodos_pago.create({ data: { nombre: 'Payphone', tipo: 'gateway', activo: true, detalles: { storeId } } });
+    res.json({ metodo: creado });
+  } catch (e) { next(e); }
+});
 // Listar números vendidos con filtro por sorteo y búsqueda por número
 adminRouter.get('/numeros_vendidos', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {

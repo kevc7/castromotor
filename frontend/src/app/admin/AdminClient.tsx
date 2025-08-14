@@ -15,10 +15,7 @@ const AdminClient: React.FC = () => {
     premios: { definidos: number; asignados: number; restantes: number };
   }>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [showDelete, setShowDelete] = useState(false);
-  const [deleteLoading, setDeleteLoading] = useState(false);
   const [sorteosList, setSorteosList] = useState<any[]>([]);
-  const [selectedDelete, setSelectedDelete] = useState<any>(null);
 
   async function cargarSorteos() {
     const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
@@ -46,7 +43,8 @@ const AdminClient: React.FC = () => {
 
   async function crearSorteo(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const form = new FormData(e.currentTarget);
+    const formEl = e.currentTarget;
+    const form = new FormData(formEl);
     setCreateLoading(true);
     setErrorMsg(null);
     try {
@@ -69,6 +67,8 @@ const AdminClient: React.FC = () => {
       setSorteo(data.sorteo);
       await cargarEstado(data.sorteo.id);
       await cargarSorteos();
+      // limpiar formulario
+      formEl.reset();
     } finally {
       setCreateLoading(false);
     }
@@ -138,7 +138,7 @@ const AdminClient: React.FC = () => {
                     await fetch(url, { method: 'PATCH', headers: token ? { Authorization: `Bearer ${token}` } : {} });
                     await cargarSorteos();
                   }} className="px-3 py-2 rounded-md border border-white/10 bg-white/5 hover:bg-white/10">{s.estado === 'publicado' ? 'Borrador' : 'Publicar'}</button>
-                  <button onClick={() => { setSelectedDelete(s); setShowDelete(true); }} className="px-3 py-2 rounded-md bg-red-600 text-white hover:bg-red-700">Desactivar</button>
+                  {/* Botón de desactivación eliminado */}
                 </div>
               </div>
             ))}
@@ -181,54 +181,11 @@ const AdminClient: React.FC = () => {
         {sorteo && (
           <div className="text-sm text-gray-600 flex items-center justify-between">
             <div className="text-slate-300">Sorteo creado: ID {String(sorteo.id)} — {sorteo.nombre}</div>
-            <button onClick={() => { setSelectedDelete(sorteo); setShowDelete(true); }} className="px-3 py-2 rounded-md bg-red-600 text-white hover:bg-red-700">Eliminar sorteo</button>
           </div>
         )}
       </section>
 
-      {/* Modal eliminar sorteo */}
-      {showDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#0f1725] text-white shadow-xl">
-            <div className="p-5 border-b border-white/10">
-              <h3 className="text-lg font-semibold">Eliminar sorteo</h3>
-            </div>
-            <div className="p-5 space-y-3 text-sm text-slate-200">
-              <p className="text-rose-300 font-medium">Esta acción no se puede deshacer.</p>
-              <ul className="list-disc list-inside space-y-1 text-slate-300">
-                <li>Se eliminará el sorteo <span className="font-semibold">{selectedDelete?.nombre}</span>.</li>
-                <li>Se borrarán <span className="font-semibold">TODOS</span> los números generados para este sorteo.</li>
-                <li>Se eliminarán también los paquetes y premios asociados.</li>
-              </ul>
-              <p>Revisa dos veces antes de continuar.</p>
-            </div>
-            <div className="p-5 flex items-center justify-end gap-3 border-t border-white/10">
-              <button onClick={() => setShowDelete(false)} className="px-4 py-2 rounded-md border border-white/10 bg-white/5 hover:bg-white/10">Cancelar</button>
-              <button
-                disabled={deleteLoading}
-                onClick={async () => {
-                  if (!selectedDelete?.id) return;
-                  setDeleteLoading(true);
-                  const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
-                  const res = await fetch(`${API_BASE}/api/admin/sorteos/${selectedDelete.id}`, { method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {} });
-                  setDeleteLoading(false);
-                  if (res.ok) {
-                    setShowDelete(false);
-                    if (sorteo?.id === selectedDelete.id) setSorteo(null);
-                    setEstado(null);
-                    setPremios([]);
-                    setPremiosInputs([]);
-                    await cargarSorteos();
-                  }
-                }}
-                className={`px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 ${deleteLoading ? 'opacity-70' : ''}`}
-              >
-                {deleteLoading ? 'Eliminando…' : 'Sí, eliminar definitivamente'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Modal eliminar sorteo removido por solicitud */}
 
       <section className="p-6 rounded-lg border space-y-4 max-w-5xl mx-auto px-6">
         {estado && (
@@ -241,7 +198,7 @@ const AdminClient: React.FC = () => {
             <div>Premios restantes: {estado.premios.restantes}</div>
           </div>
         )}
-        <h2 className="text-xl font-semibold">Crear premios</h2>
+        <h2 className="text-xl font-semibold">Crear premio/s para ({sorteo?.nombre ? `Sorteo: ${sorteo.nombre}` : 'Sorteo que se le asignará números ganadores'})</h2>
         <form onSubmit={crearPremios} className="space-y-3">
           {!sorteo?.id && (
             <div className="text-sm text-red-600">Debes crear un sorteo primero para definir premios.</div>
@@ -269,12 +226,12 @@ const AdminClient: React.FC = () => {
             {premiosLoading ? "Asignando..." : "Crear premios y asignar números"}
           </button>
         </form>
-        {premios.length > 0 && (
+          {premios.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {premios.map((p) => (
-              <div key={p.id} className="rounded-lg border bg-white p-3">
-                <div className="font-semibold">{p.descripcion}</div>
-                <div className="text-sm text-gray-700">Número asignado: {p.numero_sorteo?.numero_texto || p.numero_sorteo_id}</div>
+              <div key={p.id} className="rounded-lg border border-white/10 bg-black/30 p-3">
+                <div className="font-semibold text-white">{p.descripcion}</div>
+                <div className="text-sm text-slate-300">Número asignado: {p.numero_sorteo?.numero_texto || p.numero_sorteo_id}</div>
               </div>
             ))}
           </div>

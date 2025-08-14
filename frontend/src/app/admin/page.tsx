@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import React, { useEffect, useMemo, useState } from "react";
+import { useRef } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001";
 
@@ -56,22 +57,20 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Gráfico simple (barra horizontal) */}
-      {series.length > 0 && (
+      {/* Gráfico estadístico simple en canvas */}
+      {stats && (
         <div className="max-w-6xl mx-auto px-6 pb-6">
           <div className="rounded-xl border border-white/10 bg-white/5 p-4">
             <div className="text-sm text-slate-300 mb-3">Resumen</div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {series.map((s) => (
-                <Bar
-                  key={s.label}
-                  label={s.label}
-                  value={s.label === 'Tickets' ? Number(stats?.grafica?.vendidos_publicados || 0) : Number(stats?.total_ganancias || 0)}
-                  max={s.value || 1}
-                  extra={s.label === 'Tickets' ? `Vendidos: ${Number(stats?.grafica?.vendidos_publicados || 0)} / Disponibles: ${Number(stats?.grafica?.disponibles_publicados || 0)}` : undefined}
-                />
-              ))}
-            </div>
+            <CanvasChart
+              values={[
+                Number(stats?.grafica?.vendidos_publicados || 0),
+                Number(stats?.tickets_vendidos || 0),
+                Number(stats?.ordenes_aprobadas || 0),
+                Number(stats?.ordenes_pendientes || 0),
+              ]}
+              labels={["Vendidos publicados","Tickets vendidos","Órdenes aprobadas","Órdenes pendientes"]}
+            />
           </div>
         </div>
       )}
@@ -106,13 +105,46 @@ function Stat({ title, value }: { title: string; value: string }) {
   );
 }
 
-function Bar({ label, value, max, extra }: { label: string; value: number; max: number; extra?: string }) {
-  const width = Math.max(4, Math.round((value / (max || 1)) * 100));
+function CanvasChart({ values, labels }: { values: number[]; labels: string[] }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  React.useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    const w = c.width = c.clientWidth;
+    const h = c.height = 160;
+    ctx.clearRect(0,0,w,h);
+    const max = Math.max(...values, 1);
+    const barW = (w - 40) / values.length - 20;
+    values.forEach((v, i) => {
+      const x = 40 + i * (barW + 20);
+      const barH = (v / max) * (h - 40);
+      const y = h - 20 - barH;
+      const grad = ctx.createLinearGradient(0, y, 0, y + barH);
+      grad.addColorStop(0, '#fb7185');
+      grad.addColorStop(1, '#f43f5e');
+      ctx.fillStyle = grad;
+      ctx.fillRect(x, y, barW, barH);
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = '10px sans-serif';
+      ctx.fillText(String(v), x, y - 4);
+    });
+    // Axis
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.beginPath();
+    ctx.moveTo(30, 10); ctx.lineTo(30, h-20); ctx.lineTo(w-10, h-20); ctx.stroke();
+  }, [values.join(',')]);
   return (
-    <div className="space-y-1">
-      <div className="text-xs text-slate-300">{label}: {Number(value).toLocaleString()} {extra ? `— ${extra}` : ''}</div>
-      <div className="h-3 w-full rounded bg-slate-700/40 overflow-hidden">
-        <div className="h-full bg-gradient-to-r from-rose-500 to-rose-400" style={{ width: `${width}%` }} />
+    <div>
+      <canvas ref={canvasRef} className="w-full" style={{ height: 160 }} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2 text-xs text-slate-300">
+        {labels.map((l, i) => (
+          <div key={i} className="rounded border border-white/10 bg-black/20 p-2">
+            <div className="font-medium text-white">{l}</div>
+            <div>{values[i].toLocaleString()}</div>
+          </div>
+        ))}
       </div>
     </div>
   );

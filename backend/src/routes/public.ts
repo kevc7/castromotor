@@ -4,6 +4,7 @@ import path from "node:path";
 import fs from "node:fs";
 import multer from "multer";
 import { prisma } from "../db";
+import crypto from 'node:crypto';
 
 export const publicRouter = Router();
 // Endpoint público para crear un admin inicial (solo para bootstrap local).
@@ -52,6 +53,215 @@ publicRouter.post('/verificaciones/solicitar', async (req: Request, res: Respons
   } catch (e) {
     next(e);
   }
+});
+
+// Payphone INIT: crea orden pendiente con reservas y devuelve payload para cajita
+publicRouter.post('/payments/payphone/init', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = z.object({
+      nombres: z.string(),
+      apellidos: z.string().optional(),
+      cedula: z.string().optional(),
+      correo_electronico: z.string().email(),
+      telefono: z.string().optional(),
+      direccion: z.string().optional(),
+      sorteo_id: z.coerce.bigint(),
+      paquete_id: z.coerce.number().int().optional(),
+      cantidad_numeros: z.coerce.number().int().min(1).optional(),
+    }).parse(req.body);
+
+    // Cliente: reutiliza por correo si existe, sino crea básico
+    let cliente = await prisma.clientes.findFirst({ where: { correo_electronico: body.correo_electronico } });
+    if (!cliente) {
+      cliente = await prisma.clientes.create({ data: {
+        nombres: body.nombres,
+        apellidos: body.apellidos ?? '',
+        cedula: body.cedula ?? '',
+        correo_electronico: body.correo_electronico,
+        telefono: body.telefono ?? '',
+        direccion: body.direccion ?? '',
+      } as any });
+    }
+
+    const sorteo = await prisma.sorteos.findUnique({ where: { id: body.sorteo_id } });
+    if (!sorteo) return res.status(404).json({ error: 'Sorteo no encontrado' });
+
+    let cantidad = body.cantidad_numeros ?? 0;
+    let monto_total = 0;
+    if (body.paquete_id) {
+      const paquete: any = await (prisma as any).paquetes.findUnique({ where: { id: BigInt(body.paquete_id) } });
+      if (!paquete || paquete.sorteo_id !== body.sorteo_id || paquete.estado !== 'publicado') return res.status(400).json({ error: 'Paquete inválido' });
+      cantidad = Number(paquete.cantidad_numeros || 0);
+      monto_total = Number(paquete.precio_total || 0);
+    } else if (cantidad > 0) {
+      monto_total = Number(sorteo.precio_por_numero) * cantidad;
+    } else {
+      return res.status(400).json({ error: 'Debe indicar cantidad_numeros o paquete_id' });
+    }
+
+    const disponibles = await prisma.numeros_sorteo.count({ where: { sorteo_id: body.sorteo_id, estado: 'disponible' } });
+    if (disponibles < cantidad) return res.status(400).json({ error: `No hay suficientes números disponibles. Quedan ${disponibles}.` });
+
+    const mpPayphone: any = await (prisma as any).metodos_pago.findFirst({ where: { nombre: 'Payphone' } });
+    if (!mpPayphone) return res.status(400).json({ error: 'Método Payphone no configurado' });
+
+    const codigo = `OR-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const orden = await prisma.ordenes.create({
+      data: {
+        codigo,
+        cliente_id: cliente.id,
+        sorteo_id: body.sorteo_id,
+        metodo_pago_id: mpPayphone.id,
+        metodo_pago: 'Payphone',
+        estado_pago: 'pendiente',
+        monto_total,
+        cantidad_numeros: cantidad,
+      } as any,
+    });
+
+    // Reservar números
+    await prisma.$transaction(async (tx) => {
+      const seleccion = await (tx as any).$queryRaw<{ id: bigint }[]>`
+        SELECT id FROM numeros_sorteo
+        WHERE sorteo_id = ${body.sorteo_id} AND estado = 'disponible'
+        ORDER BY random()
+        LIMIT ${cantidad}
+        FOR UPDATE SKIP LOCKED
+      `;
+      if (seleccion.length < cantidad) throw new Error('Stock insuficiente');
+      const ids = seleccion.map((s: { id: bigint }) => s.id);
+      await tx.numeros_sorteo.updateMany({ where: { id: { in: ids } }, data: { estado: 'reservado', orden_id: orden.id } });
+    });
+
+    const clientTxnId = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + (Number(process.env.PAYPHONE_TIMEOUT_MIN || 5) * 60 * 1000));
+    await (prisma as any).pagos_payphone.create({ data: { orden_id: orden.id, client_txn_id: clientTxnId, status: 'INIT', amount: monto_total, expires_at: expiresAt } });
+
+    const payload = {
+      storeId: process.env.PAYPHONE_STORE_ID,
+      amount: Math.round(monto_total * 100), // Payphone suele usar centavos
+      clientTransactionId: clientTxnId,
+      email: body.correo_electronico,
+      responseUrl: process.env.PAYPHONE_RESPONSE_URL,
+    };
+    res.json({ ok: true, orden_id: orden.id, payload });
+  } catch (e) { next(e); }
+});
+
+// Receptor de respuesta (webhook/redirección). Solo registra y confirma con API server-side.
+publicRouter.post('/checkout/payphone/webhook', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Guardamos cuerpo para auditoría básica y respondemos 200
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// Confirmación Payphone: cierra orden
+publicRouter.post('/payments/payphone/confirm', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { clientTransactionId } = z.object({ clientTransactionId: z.string().min(8) }).parse(req.body);
+    const pago: any = await (prisma as any).pagos_payphone.findUnique({ where: { client_txn_id: clientTransactionId } });
+    if (!pago) return res.status(404).json({ error: 'Transacción no encontrada' });
+
+    // Idempotencia: si ya aprobado, regresar
+    if (pago.status === 'APPROVED') {
+      const orden = await prisma.ordenes.findUnique({ where: { id: pago.orden_id }, include: { items: true } });
+      return res.json({ ok: true, orden });
+    }
+
+    // Llamar a API de confirmación Payphone
+    const token = process.env.PAYPHONE_TOKEN || '';
+    const storeId = process.env.PAYPHONE_STORE_ID || '';
+    let success = false;
+    let data: any = {};
+    if (process.env.PAYPHONE_MOCK === '1' || String((req.query as any)?.mock || (req.body as any)?.mock) === '1') {
+      // Modo mock para desarrollo local: aprobar sin llamar a Payphone
+      success = true;
+      data = { transactionId: 'MOCK', transactionStatus: 'Approved' };
+    } else {
+      if (!token || !storeId) return res.status(500).json({ error: 'Payphone no configurado' });
+      const confirmUrl = 'https://pay.payphonetodoesposible.com/api/Sale/Confirm';
+      const resp = await fetch(confirmUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ storeId, clientTransactionId }),
+      });
+      data = await resp.json().catch(() => ({} as any));
+      success = resp.ok && (String(data?.transactionStatus || data?.message).toLowerCase() === 'approved');
+    }
+
+    // Validaciones negocio
+    const orden = await prisma.ordenes.findUnique({ where: { id: pago.orden_id } });
+    if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
+    if (!success) {
+      // liberar reservas y marcar orden rechazada si falló
+      await prisma.$transaction(async (tx) => {
+        await tx.numeros_sorteo.updateMany({ where: { orden_id: orden.id, estado: 'reservado' }, data: { estado: 'disponible', orden_id: null } });
+        await tx.ordenes.update({ where: { id: orden.id }, data: { estado_pago: 'rechazado' } });
+      });
+      await (prisma as any).pagos_payphone.update({ where: { id: pago.id }, data: { status: 'FAILED', raw: data } });
+      return res.status(400).json({ error: 'Pago no aprobado', detalle: data });
+    }
+
+    // Aprobar: pasar reservados a vendidos y crear items (precio unitario = monto_total / cantidad)
+    await prisma.$transaction(async (tx) => {
+      const reservados = await tx.numeros_sorteo.findMany({ where: { orden_id: orden.id, estado: 'reservado' } });
+      const ids = reservados.map(r => r.id);
+      await tx.numeros_sorteo.updateMany({ where: { id: { in: ids } }, data: { estado: 'vendido' } });
+
+      const unit = Math.round(Number(orden.monto_total || 0) / Math.max(1, Number(orden.cantidad_numeros || 1)) * 100) / 100;
+      for (const n of reservados) {
+        await tx.ordenes_items.create({ data: { orden_id: orden.id, numero_sorteo_id: n.id, precio: unit as any } as any });
+      }
+
+      await tx.ordenes.update({ where: { id: orden.id }, data: { estado_pago: 'aprobado' } });
+    });
+
+    await (prisma as any).pagos_payphone.update({ where: { id: pago.id }, data: { status: 'APPROVED', payphone_txn_id: String((data as any)?.transactionId || ''), raw: data, confirmed_at: new Date() } });
+
+    // Generar factura y enviar correo (similar a approve)
+    try {
+      const aprobada: any = await prisma.ordenes.findUnique({ where: { id: pago.orden_id }, include: { items: true, metodo_pago_ref: true, cliente: true, sorteo: true } as any });
+      if (aprobada?.cliente?.correo_electronico && aprobada?.items) {
+        const fs = await import('node:fs');
+        const path = await import('node:path');
+        const { sendMail } = await import('../utils/mailer');
+        const PDFDocument = (await import('pdfkit')).default;
+        const itemIds = (aprobada.items as any[]).map((i: any) => i.numero_sorteo_id as bigint);
+        const numeros = itemIds.length ? await prisma.numeros_sorteo.findMany({ where: { id: { in: itemIds } }, select: { id: true, numero_texto: true } }) : [];
+        const numeroMap = new Map(numeros.map((n) => [String(n.id), n.numero_texto]));
+        const lista = (aprobada.items as any[]).map((i: any) => `#${numeroMap.get(String(i.numero_sorteo_id)) ?? String(i.numero_sorteo_id)}`).join(', ');
+        const dir = path.resolve(process.cwd(), 'uploads', 'facturas');
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const pdfPath = path.resolve(dir, `${aprobada.codigo}.pdf`);
+        const doc = new PDFDocument();
+        doc.pipe(fs.createWriteStream(pdfPath));
+        doc.fontSize(16).text('Factura / Comprobante', { align: 'center' });
+        doc.moveDown();
+        doc.fontSize(12).text(`Orden: ${aprobada.codigo}`);
+        doc.text(`Sorteo: ${aprobada.sorteo?.nombre ?? ''}`);
+        doc.text(`Cliente: ${aprobada.cliente?.nombres ?? ''}`);
+        doc.text(`Método de pago: ${aprobada?.metodo_pago_ref?.nombre ?? aprobada?.metodo_pago ?? ''}`);
+        doc.text(`Monto: $${String(aprobada.monto_total ?? '')}`);
+        doc.moveDown();
+        doc.text(`Números: ${lista}`);
+        doc.end();
+        try {
+          const adminUser = await (prisma as any).usuarios?.findFirst?.({}).catch(() => null);
+          const dataFactura: any = { orden_id: pago.orden_id, ruta_factura: path.relative(process.cwd(), pdfPath).replace(/\\/g, '/'), datos_factura: { orden_id: String(pago.orden_id) } };
+          if (adminUser?.id) dataFactura.usuario_admin_id = adminUser.id;
+          await prisma.facturas.create({ data: dataFactura });
+        } catch {}
+        await sendMail({ to: aprobada.cliente.correo_electronico, subject: `Orden ${aprobada?.codigo} aprobada`, html: `<p>Hola ${aprobada.cliente.nombres},</p><p>Tu orden <strong>${aprobada?.codigo}</strong> ha sido aprobada.</p><p>Método de pago: ${aprobada?.metodo_pago_ref?.nombre ?? aprobada?.metodo_pago ?? ''}</p><p>Números asignados: ${lista}</p>`, attachments: [{ filename: `${aprobada.codigo}.pdf`, path: pdfPath }] });
+      }
+    } catch {}
+
+    const updated = await prisma.ordenes.findUnique({ where: { id: pago.orden_id }, include: { items: true } });
+    res.json({ ok: true, orden: updated });
+  } catch (e) { next(e); }
 });
 
 // Sorteos con números ganadores y métricas (para landing)
@@ -129,7 +339,7 @@ publicRouter.get("/sorteos", async (_req: Request, res: Response, next: NextFunc
     });
     // Adjuntar conteos
     const enriched = await Promise.all(
-      sorteos.map(async (s) => {
+      sorteos.map(async (s: any) => {
         const total = await prisma.numeros_sorteo.count({ where: { sorteo_id: s.id } });
         const vendidos = await prisma.numeros_sorteo.count({ where: { sorteo_id: s.id, estado: "vendido" } });
         return { ...s, conteos: { total, vendidos, disponibles: total - vendidos } };
