@@ -197,7 +197,7 @@ export default function SorteoInfoPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   {data.premios.map((p: any) => (
                     <div key={String(p.id)} className="rounded-lg bg-black/30 border border-white/10 p-3">
-                      <div className="text-xs text-slate-400">{p.descripcion}</div>
+                      <div className="text-sm font-bold text-slate-400">PREMIO: {p.descripcion}</div>
                       <div className={`text-lg font-bold ${p.vendido ? 'line-through text-slate-400' : 'text-white'}`}>#{p.numero_texto}</div>
                       {p.vendido && p.cliente && (
                         <div className="text-xs text-emerald-400">Ganador: {p.cliente.nombres} {p.cliente.apellidos}</div>

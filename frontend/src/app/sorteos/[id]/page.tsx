@@ -163,17 +163,12 @@ export default function SorteoPage() {
       const res = await fetch(`${API_BASE}/api/orders/complete`, { method: 'POST', body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Error creando la orden');
-      setMsg("¡Tu orden fue generada con éxito! Un administrador la revisará y te llegará un correo con el resultado.");
+      setMsg("✅ ¡Tu orden fue generada con éxito! Un administrador la revisará y te llegará un correo con el resultado.");
       setMsgType('success');
-      // Limpiar formulario y comprobante
-      setCliente({ nombres: "", apellidos: "", cedula: "", correo_electronico: "", telefono: "", direccion: "" });
-      setVerificationId(null);
-      setVerificationCode("");
-      setIsVerified(false);
-      setVerifMsg(null);
-      setFile(null);
-      setPaqueteId(null);
-      setCantidad(1);
+      
+      // Limpiar formulario completamente
+      limpiarFormulario();
+      
       // Scroll a arriba para ver el mensaje
       if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e: any) {
@@ -185,24 +180,62 @@ export default function SorteoPage() {
     }
   }
 
+  // Función para limpiar completamente el formulario
+  function limpiarFormulario() {
+    setCliente({ nombres: "", apellidos: "", cedula: "", correo_electronico: "", telefono: "", direccion: "" });
+    setVerificationId(null);
+    setVerificationCode("");
+    setIsVerified(false);
+    setVerifMsg(null);
+    setFile(null);
+    setPaqueteId(null);
+    setCantidad(1);
+    setMsg(null);
+    setMsgType(null);
+    
+    // Limpiar el input de archivo del DOM
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    if (fileInput) {
+      fileInput.value = '';
+    }
+  }
+
   async function solicitarCodigo() {
     try {
       setVerifMsg(null);
       setIsVerified(false);
       setSendingCode(true);
       if (!cliente.correo_electronico) throw new Error("Ingresa tu correo primero");
+      
       const res = await fetch(`${API_BASE}/api/verificaciones/solicitar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ correo_electronico: cliente.correo_electronico })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'No se pudo enviar el código');
+      
+      let data;
+      try {
+        data = await res.json();
+      } catch (parseError) {
+        console.error('Error parsing JSON response:', parseError);
+        throw new Error('Error en la respuesta del servidor. Intenta nuevamente.');
+      }
+      
+      if (!res.ok) {
+        throw new Error(data?.error || 'No se pudo enviar el código');
+      }
+      
       setVerificationId(Number(data.verification_id));
       setExpiresAt(Date.now() + 10 * 60 * 1000);
       setVerificationCode("");
-      setVerifMsg("Código enviado a tu correo. Revisa tu bandeja (vigente 10 minutos)");
+      
+      if (data.mail_sent) {
+        setVerifMsg("✅ Código enviado a tu correo. Revisa tu bandeja (vigente 10 minutos)");
+      } else {
+        setVerifMsg("⚠️ Código generado pero no se pudo enviar el correo. Verifica tu dirección de email.");
+      }
     } catch (e: any) {
+      console.error('Error en solicitarCodigo:', e);
       setVerifMsg(e?.message || 'Error enviando el código');
     } finally {
       setSendingCode(false);
@@ -461,8 +494,20 @@ export default function SorteoPage() {
               <div className={`${isVerified ? 'text-emerald-400' : 'text-amber-300'}`}>{isVerified ? 'Código verificado' : 'Código no verificado'}</div>
                   </div>
             {msg && (
-              <div className={`mt-3 rounded-lg p-3 text-sm ${msgType === 'success' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'}`}>{msg}</div>
+              <div className={`mt-3 rounded-lg p-3 text-sm ${msgType === 'success' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'}`}>
+                {msg}
+                {msgType === 'success' && (
+                  <div className="mt-2">
+                    <button 
+                      onClick={limpiarFormulario}
+                      className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded mr-2"
+                    >
+                      Hacer otra compra
+                    </button>
+                  </div>
                 )}
+              </div>
+            )}
             <div className="mt-3 text-xs text-slate-400">
               <a href="/" className="underline hover:text-white">Volver a la página principal</a>
             </div>

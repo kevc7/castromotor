@@ -37,6 +37,7 @@ publicRouter.post('/verificaciones/solicitar', async (req: Request, res: Respons
     });
 
     let mailOk = false;
+    let mailError = null;
     try {
       const { sendMail } = await import('../utils/mailer');
       await sendMail({
@@ -47,11 +48,23 @@ publicRouter.post('/verificaciones/solicitar', async (req: Request, res: Respons
       mailOk = true;
     } catch (err) {
       console.error('Error enviando correo de verificación:', err);
+      mailError = err instanceof Error ? err.message : 'Error desconocido al enviar correo';
     }
 
-    res.json({ verification_id: record.id, mail_sent: mailOk });
+    // Siempre devolver JSON, incluso si el correo falló
+    res.json({ 
+      verification_id: record.id, 
+      mail_sent: mailOk,
+      mail_error: mailError,
+      message: mailOk ? 'Código enviado exitosamente' : 'Código generado pero no se pudo enviar el correo'
+    });
   } catch (e) {
-    next(e);
+    // Asegurar que siempre devolvemos JSON
+    console.error('Error en verificación de correo:', e);
+    res.status(400).json({ 
+      error: e instanceof Error ? e.message : 'Error inesperado',
+      mail_sent: false 
+    });
   }
 });
 
@@ -355,7 +368,12 @@ publicRouter.get("/sorteos", async (_req: Request, res: Response, next: NextFunc
 publicRouter.get('/paquetes_publicados', async (_req: Request, res: Response, next: NextFunction) => {
   try {
     const paquetes = await prisma.paquetes.findMany({
-      where: { estado: 'publicado' } as any,
+      where: { 
+        estado: 'publicado',
+        sorteo: {
+          estado: 'publicado' // Solo paquetes de sorteos publicados
+        }
+      } as any,
       include: { sorteo: true },
       orderBy: [{ sorteo_id: 'desc' }, { cantidad_numeros: 'asc' }]
     } as any);

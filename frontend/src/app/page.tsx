@@ -7,6 +7,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001"
 
 function SmallCarousel({ images }: { images: any[] }) {
   const [index, setIndex] = useState(0);
+  const [isAutoPlaying, setIsAutoPlaying] = useState(true);
   const current = images?.[index];
   
   const getImageUrl = (url: string) => {
@@ -16,15 +17,33 @@ function SmallCarousel({ images }: { images: any[] }) {
     return `${baseUrl}${url.startsWith('/') ? url : `/${url}`}`;
   };
   
+  // Auto-play functionality
+  useEffect(() => {
+    if (!images || images.length <= 1 || !isAutoPlaying) return;
+    
+    const interval = setInterval(() => {
+      setIndex((prevIndex) => (prevIndex + 1) % images.length);
+    }, 4000); // Cambiar cada 4 segundos
+    
+    return () => clearInterval(interval);
+  }, [images, isAutoPlaying]);
+  
+  // Pause auto-play when user interacts
+  const handleUserInteraction = () => {
+    setIsAutoPlaying(false);
+    // Resume auto-play after 10 seconds of no interaction
+    setTimeout(() => setIsAutoPlaying(true), 10000);
+  };
+  
   if (!images || images.length === 0) return null;
   
   return (
-    <div className="relative w-full h-96 rounded-lg overflow-hidden mb-4">
+    <div className="relative w-full h-96 rounded-lg overflow-hidden mb-4 group">
       {current && (
         <img
           src={getImageUrl(current.url)}
           alt={current.alt || "Sorteo"}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover transition-transform duration-700 ease-out"
           loading="lazy"
         />
       )}
@@ -33,8 +52,13 @@ function SmallCarousel({ images }: { images: any[] }) {
           {images.map((_, i) => (
             <button
               key={i}
-              onClick={() => setIndex(i)}
-              className={`h-2 w-2 rounded-full ${i === index ? 'bg-white' : 'bg-white/40'}`}
+              onClick={() => {
+                setIndex(i);
+                handleUserInteraction();
+              }}
+              className={`h-2 w-2 rounded-full transition-all duration-300 ${
+                i === index ? 'bg-white scale-110' : 'bg-white/40 hover:bg-white/60'
+              }`}
               aria-label={`Imagen ${i + 1}`}
             />)
           )}
@@ -42,8 +66,24 @@ function SmallCarousel({ images }: { images: any[] }) {
       )}
       {images.length > 1 && (
         <>
-          <button onClick={() => setIndex((i) => (i - 1 + images.length) % images.length)} className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full h-8 w-8 text-sm flex items-center justify-center">‹</button>
-          <button onClick={() => setIndex((i) => (i + 1) % images.length)} className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full h-8 w-8 text-sm flex items-center justify-center">›</button>
+          <button 
+            onClick={() => {
+              setIndex((i) => (i - 1 + images.length) % images.length);
+              handleUserInteraction();
+            }} 
+            className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full h-8 w-8 text-sm flex items-center justify-center transition-all duration-300 opacity-0 group-hover:opacity-100"
+          >
+            ‹
+          </button>
+          <button 
+            onClick={() => {
+              setIndex((i) => (i + 1) % images.length);
+              handleUserInteraction();
+            }} 
+            className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full h-8 w-8 text-sm flex items-center justify-center transition-all duration-300 opacity-0 group-hover:opacity-100"
+          >
+            ›
+          </button>
         </>
       )}
     </div>
@@ -101,8 +141,14 @@ export default function HomePage() {
     })();
   }, []);
 
+  // Paquetes destacados: top 3 con mayor descuento (solo de sorteos publicados)
   const destacados = useMemo(() => {
     return paquetes
+      .filter((p) => {
+        // Doble filtro: asegurar que tanto el paquete como su sorteo estén publicados
+        // Esto previene mostrar paquetes de sorteos en borrador
+        return p.sorteo?.estado === 'publicado' && p.estado === 'publicado';
+      })
       .map((p) => {
         const original = Number(p.sorteo?.precio_por_numero || 0) * Number(p.cantidad_numeros || 0);
         const final = Number(p.precio_total || 0);
@@ -115,7 +161,12 @@ export default function HomePage() {
 
   const paquetesExtra = useMemo(() => {
     const destacadosIds = new Set(destacados.map(p => p.id));
-    return paquetes.filter(p => !destacadosIds.has(p.id));
+    return paquetes
+      .filter((p) => {
+        // Filtrar paquetes de sorteos que no estén publicados
+        return p.sorteo?.estado === 'publicado' && p.estado === 'publicado';
+      })
+      .filter(p => !destacadosIds.has(p.id));
   }, [paquetes, destacados]);
 
   // Intersection Observer para revelar elementos al hacer scroll
@@ -284,7 +335,9 @@ export default function HomePage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
                   {s.premios?.map((p: any) => (
                     <div key={String(p.id)} className="rounded-lg bg-black/30 border border-white/10 p-3 hover:bg-black/40 transition">
-                      <div className="text-xs text-slate-400">{p.descripcion}</div>
+                      <div className={`text-sm font-bold ${p.vendido ? 'text-slate-400' : 'animate-gradient-text bg-gradient-to-r from-rose-400 via-amber-400 to-rose-400 bg-clip-text text-transparent'}`}>
+                        PREMIO: {p.descripcion}
+                      </div>
                       <div className={`text-lg font-bold ${p.vendido ? 'line-through text-slate-400' : 'text-white'}`}>#{p.numero_texto}</div>
                       {p.vendido && p.cliente && (
                         <div className="text-xs text-emerald-400">Ganador: {p.cliente.nombres} {p.cliente.apellidos}</div>

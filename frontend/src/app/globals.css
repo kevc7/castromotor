@@ -72,3 +72,16 @@ body {
 /* Animaciones de aparición al hacer scroll */
 .reveal-up { opacity: 0; transform: translateY(12px); transition: opacity 600ms ease, transform 600ms ease; }
 .reveal-up.is-visible { opacity: 1; transform: translateY(0); }
+
+/* Animación de gradiente de colores para descripciones de premios */
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-gradient-text {
+  background-size: 200% 200%;
+  animation: gradient-shift 4s ease-in-out infinite;
+  font-weight: 500;
+}
