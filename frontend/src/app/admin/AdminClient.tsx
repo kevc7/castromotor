@@ -368,19 +368,19 @@ export default function AdminClient() {
               <div className="md:col-span-2 flex gap-3">
                 <button disabled={createLoading} className="px-4 py-2 rounded-md bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50">
                   {createLoading ? "Creando..." : "Crear sorteo (y generar números)"}
-                </button>
-              </div>
-            </form>
-            {sorteo && (
+            </button>
+          </div>
+        </form>
+        {sorteo && (
               <div className="text-sm text-gray-600 flex items-center justify-between">
                 <div className="text-slate-300">Sorteo creado: ID {String(sorteo.id)} — {sorteo.nombre}</div>
               </div>
-            )}
+        )}
 
             {/* Sección de crear premios */}
             <div className="mt-8 p-6 rounded-lg border border-white/10 bg-white/5">
               <h2 className="text-xl font-semibold">Crear premio/s para ({sorteo?.nombre ? `Sorteo: ${sorteo.nombre}` : 'Sorteo que se le asignará números ganadores'})</h2>
-              <form onSubmit={crearPremios} className="space-y-3">
+        <form onSubmit={crearPremios} className="space-y-3">
                 {!sorteo?.id && (
                   <div className="text-sm text-red-600">Debes crear un sorteo primero para definir premios.</div>
                 )}
@@ -404,13 +404,13 @@ export default function AdminClient() {
                   </div>
                 )}
                 <button disabled={!sorteo?.id || premiosLoading || premiosInputs.length === 0} className="px-4 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">
-                  {premiosLoading ? "Asignando..." : "Crear premios y asignar números"}
-                </button>
-              </form>
+            {premiosLoading ? "Asignando..." : "Crear premios y asignar números"}
+          </button>
+        </form>
               
-              {premios.length > 0 && (
+        {premios.length > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                  {premios.map((p) => (
+            {premios.map((p) => (
                     <div key={p.id} className="rounded-lg border border-white/10 bg-black/30 p-3">
                       <div className="font-semibold text-white">{p.descripcion}</div>
                       <div className="text-sm text-slate-300">Número asignado: {p.numero_sorteo?.numero_texto || p.numero_sorteo_id}</div>
@@ -509,9 +509,9 @@ export default function AdminClient() {
                         Portada
                       </div>
                     )}
-                  </div>
-                ))}
               </div>
+            ))}
+          </div>
             )}
           </section>
         )}

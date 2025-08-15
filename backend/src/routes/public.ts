@@ -142,7 +142,7 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
       amount: Math.round(monto_total * 100), // Payphone suele usar centavos
       clientTransactionId: clientTxnId,
       email: body.correo_electronico,
-      responseUrl: process.env.PAYPHONE_RESPONSE_URL,
+      // responseUrl: process.env.PAYPHONE_RESPONSE_URL, // Comentado para usar callbacks
     };
     res.json({ ok: true, orden_id: orden.id, payload });
   } catch (e) { next(e); }

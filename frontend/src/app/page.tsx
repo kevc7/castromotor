@@ -265,14 +265,22 @@ export default function HomePage() {
                 {/* Carrusel de imágenes */}
                 <SmallCarousel images={imagenes} />
                 
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-xl font-semibold">{s.nombre}</div>
-                  <div className="text-xs text-slate-300">{Math.round(vendidosPct)}%</div>
+                <div className="mb-3">
+                  <div className="text-xl font-semibold mb-2">{s.nombre}</div>
+                  <div className="relative">
+                    <div className="h-4 w-full rounded-full bg-slate-700/40 overflow-hidden shadow-inner">
+                      <div 
+                        className="h-full bg-gradient-to-r from-rose-500 via-rose-400 to-rose-300 transition-all duration-1000 ease-out shadow-lg" 
+                        style={{ width: `${vendidosPct}%` }}
+                      />
+                    </div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-xs font-semibold text-white drop-shadow-lg">
+                        {Math.round(vendidosPct)}% completado
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div className="h-2.5 w-full rounded bg-slate-700/40 overflow-hidden mb-2">
-                  <div className="h-full bg-gradient-to-r from-rose-500 to-rose-400 transition-all duration-700" style={{ width: `${vendidosPct}%` }} />
-                </div>
-                <div className="text-xs text-slate-300 mb-4">Vendidos: {s?.conteos?.vendidos ?? 0} / {s?.conteos?.total ?? 0}</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
                   {s.premios?.map((p: any) => (
                     <div key={String(p.id)} className="rounded-lg bg-black/30 border border-white/10 p-3 hover:bg-black/40 transition">

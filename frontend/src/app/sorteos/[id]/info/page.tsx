@@ -116,10 +116,19 @@ export default function SorteoInfoPage() {
             <p className="text-slate-300 mt-1">{data?.sorteo?.descripcion}</p>
             <div className="mt-4 text-sm text-slate-200">Precio por número: ${Number(data?.sorteo?.precio_por_numero || 0).toFixed(2)}</div>
             {conteos && (
-              <div className="mt-3">
-                <div className="text-xs text-slate-300 mb-1">Vendidos: {conteos.vendidos} / {conteos.total} ({vendidosPct}%)</div>
-                <div className="h-2.5 w-full rounded bg-slate-700/40 overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-rose-500 to-rose-400 transition-all" style={{ width: `${vendidosPct}%` }} />
+              <div className="mt-4">
+                <div className="relative">
+                  <div className="h-5 w-full rounded-full bg-slate-700/40 overflow-hidden shadow-inner">
+                    <div 
+                      className="h-full bg-gradient-to-r from-rose-500 via-rose-400 to-rose-300 transition-all duration-1000 ease-out shadow-lg" 
+                      style={{ width: `${vendidosPct}%` }}
+                    />
+                  </div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-sm font-semibold text-white drop-shadow-lg">
+                      {Math.round(vendidosPct)}% completado
+                    </span>
+                  </div>
                 </div>
               </div>
             )}

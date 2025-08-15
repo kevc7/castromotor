@@ -384,7 +384,7 @@ export default function SorteoPage() {
                         const amount = payload?.amount; // centavos
                         const clientTransactionId = payload?.clientTransactionId;
                         const responseUrl = payload?.responseUrl;
-                        // Abrir cajita Payphone inline
+                        // Abrir cajita Payphone inline con callbacks
                         // @ts-ignore
                         if (window?.PayPhone?.Button) {
                           // @ts-ignore
@@ -393,9 +393,44 @@ export default function SorteoPage() {
                             amount: amount,
                             clientTransactionId,
                             storeId,
-                            responseUrl,
+                            // responseUrl: responseUrl, // Comentado para usar callbacks
                             email: cliente.correo_electronico,
                             phoneNumber: cliente.telefono,
+                            onSuccess: async (result: any) => {
+                              console.log('Payphone success:', result);
+                              try {
+                                // Confirmar pago con backend
+                                const confirmRes = await fetch(`${API_BASE}/api/payments/payphone/confirm`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ clientTransactionId })
+                                });
+                                const confirmData = await confirmRes.json();
+                                if (confirmRes.ok) {
+                                  setMsg('✅ Pago aprobado exitosamente. ¡Gracias por tu compra!');
+                                  setMsgType('success');
+                                  // Redirigir después de 2 segundos
+                                  setTimeout(() => {
+                                    window.location.href = '/';
+                                  }, 2000);
+                                } else {
+                                  throw new Error(confirmData?.error || 'Error confirmando pago');
+                                }
+                              } catch (error: any) {
+                                setMsg(`❌ Error: ${error.message}`);
+                                setMsgType('error');
+                              }
+                            },
+                            onError: (error: any) => {
+                              console.error('Payphone error:', error);
+                              setMsg(`❌ Error en el pago: ${error.message || 'Pago no aprobado'}`);
+                              setMsgType('error');
+                            },
+                            onCancel: () => {
+                              console.log('Payphone cancelled');
+                              setMsg('❌ Pago cancelado por el usuario');
+                              setMsgType('error');
+                            }
                           }).open();
                         } else {
                           // fallback: redirigir a return
