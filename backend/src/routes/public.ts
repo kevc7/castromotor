@@ -172,86 +172,204 @@ publicRouter.post('/checkout/payphone/webhook', async (req: Request, res: Respon
 // Confirmación Payphone: cierra orden
 publicRouter.post('/payments/payphone/confirm', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    console.log('🔍 Payphone confirm request received:', { body: req.body, query: req.query });
+    
     const { clientTransactionId } = z.object({ clientTransactionId: z.string().min(8) }).parse(req.body);
+    console.log('🔍 Client Transaction ID:', clientTransactionId);
+    
     const pago: any = await (prisma as any).pagos_payphone.findUnique({ where: { client_txn_id: clientTransactionId } });
-    if (!pago) return res.status(404).json({ error: 'Transacción no encontrada' });
+    if (!pago) {
+      console.log('❌ Transacción no encontrada en BD:', clientTransactionId);
+      return res.status(404).json({ error: 'Transacción no encontrada' });
+    }
+    
+    console.log('🔍 Pago encontrado:', { id: pago.id, status: pago.status, orden_id: pago.orden_id });
 
     // Idempotencia: si ya aprobado, regresar
     if (pago.status === 'APPROVED') {
+      console.log('✅ Pago ya aprobado, retornando orden existente');
       const orden = await prisma.ordenes.findUnique({ where: { id: pago.orden_id }, include: { items: true } });
-      return res.json({ ok: true, orden });
+      return res.json({ ok: true, orden, message: 'Pago ya confirmado anteriormente' });
     }
 
     // Llamar a API de confirmación Payphone
     const token = process.env.PAYPHONE_TOKEN || '';
     const storeId = process.env.PAYPHONE_STORE_ID || '';
+    
+    console.log('🔍 Payphone config:', { 
+      storeId, 
+      tokenLength: token.length, 
+      tokenPreview: token.substring(0, 10) + '...',
+      mock: process.env.PAYPHONE_MOCK 
+    });
+    
     let success = false;
     let data: any = {};
+    
     if (process.env.PAYPHONE_MOCK === '1' || String((req.query as any)?.mock || (req.body as any)?.mock) === '1') {
       // Modo mock para desarrollo local: aprobar sin llamar a Payphone
+      console.log('🧪 Modo MOCK activado - aprobando sin llamar a Payphone');
       success = true;
       data = { transactionId: 'MOCK', transactionStatus: 'Approved' };
     } else {
-      if (!token || !storeId) return res.status(500).json({ error: 'Payphone no configurado' });
+      if (!token || !storeId) {
+        console.log('❌ Payphone no configurado:', { hasToken: !!token, hasStoreId: !!storeId });
+        return res.status(500).json({ error: 'Payphone no configurado', details: { hasToken: !!token, hasStoreId: !!storeId } });
+      }
+      
       const confirmUrl = 'https://pay.payphonetodoesposible.com/api/Sale/Confirm';
-      const resp = await fetch(confirmUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ storeId, clientTransactionId }),
-      });
-      data = await resp.json().catch(() => ({} as any));
-      success = resp.ok && (String(data?.transactionStatus || data?.message).toLowerCase() === 'approved');
+      const requestBody = { storeId, clientTransactionId };
+      
+      console.log('🔍 Llamando a Payphone API:', { url: confirmUrl, body: requestBody });
+      
+      try {
+        const resp = await fetch(confirmUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        });
+        
+        console.log('🔍 Payphone API response status:', resp.status);
+        console.log('🔍 Payphone API response headers:', Object.fromEntries(resp.headers.entries()));
+        
+        const responseText = await resp.text();
+        console.log('🔍 Payphone API response text:', responseText);
+        
+        try {
+          data = JSON.parse(responseText);
+          console.log('🔍 Payphone API response parsed:', data);
+        } catch (parseError: any) {
+          console.log('⚠️ Error parsing Payphone response as JSON:', parseError);
+          data = { rawResponse: responseText, parseError: parseError.message };
+        }
+        
+        // Validación más robusta del éxito
+        const transactionStatus = String(data?.transactionStatus || data?.status || data?.message || '').toLowerCase();
+        const isApproved = transactionStatus.includes('approved') || transactionStatus.includes('success') || transactionStatus.includes('completed');
+        
+        success = resp.ok && isApproved;
+        
+        console.log('🔍 Payphone success validation:', { 
+          respOk: resp.ok, 
+          transactionStatus, 
+          isApproved, 
+          success,
+          dataKeys: Object.keys(data || {})
+        });
+        
+      } catch (apiError: any) {
+        console.error('❌ Error llamando a Payphone API:', apiError);
+        data = { apiError: apiError.message, stack: apiError.stack };
+        success = false;
+      }
     }
 
     // Validaciones negocio
     const orden = await prisma.ordenes.findUnique({ where: { id: pago.orden_id } });
-    if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
+    if (!orden) {
+      console.log('❌ Orden no encontrada:', pago.orden_id);
+      return res.status(404).json({ error: 'Orden no encontrada' });
+    }
+    
+    console.log('🔍 Orden encontrada:', { id: orden.id, estado_pago: orden.estado_pago, monto_total: orden.monto_total });
+    
     if (!success) {
+      console.log('❌ Pago no aprobado, liberando reservas y marcando orden rechazada');
       // liberar reservas y marcar orden rechazada si falló
       await prisma.$transaction(async (tx) => {
-        await tx.numeros_sorteo.updateMany({ where: { orden_id: orden.id, estado: 'reservado' }, data: { estado: 'disponible', orden_id: null } });
-        await tx.ordenes.update({ where: { id: orden.id }, data: { estado_pago: 'rechazado' } });
+        await tx.numeros_sorteo.updateMany({ 
+          where: { orden_id: orden.id, estado: 'reservado' }, 
+          data: { estado: 'disponible', orden_id: null } 
+        });
+        await tx.ordenes.update({ 
+          where: { id: orden.id }, 
+          data: { estado_pago: 'rechazado' } 
+        });
       });
-      await (prisma as any).pagos_payphone.update({ where: { id: pago.id }, data: { status: 'FAILED', raw: data } });
-      return res.status(400).json({ error: 'Pago no aprobado', detalle: data });
+      
+      await (prisma as any).pagos_payphone.update({ 
+        where: { id: pago.id }, 
+        data: { status: 'FAILED', raw: data, failed_at: new Date() } 
+      });
+      
+      console.log('❌ Pago fallido - detalles:', data);
+      return res.status(400).json({ 
+        error: 'Pago no aprobado', 
+        detalle: data,
+        message: 'El pago no pudo ser confirmado con Payphone'
+      });
     }
 
+    console.log('✅ Pago aprobado, procesando orden...');
+    
     // Aprobar: pasar reservados a vendidos y crear items (precio unitario = monto_total / cantidad)
     await prisma.$transaction(async (tx) => {
       const reservados = await tx.numeros_sorteo.findMany({ where: { orden_id: orden.id, estado: 'reservado' } });
+      console.log('🔍 Números reservados encontrados:', reservados.length);
+      
       const ids = reservados.map(r => r.id);
       await tx.numeros_sorteo.updateMany({ where: { id: { in: ids } }, data: { estado: 'vendido' } });
 
       const unit = Math.round(Number(orden.monto_total || 0) / Math.max(1, Number(orden.cantidad_numeros || 1)) * 100) / 100;
+      console.log('🔍 Precio unitario calculado:', unit);
+      
       for (const n of reservados) {
-        await tx.ordenes_items.create({ data: { orden_id: orden.id, numero_sorteo_id: n.id, precio: unit as any } as any });
+        await tx.ordenes_items.create({ 
+          data: { orden_id: orden.id, numero_sorteo_id: n.id, precio: unit as any } as any 
+        });
       }
 
       await tx.ordenes.update({ where: { id: orden.id }, data: { estado_pago: 'aprobado' } });
+      console.log('✅ Orden marcada como aprobada');
     });
 
-    await (prisma as any).pagos_payphone.update({ where: { id: pago.id }, data: { status: 'APPROVED', payphone_txn_id: String((data as any)?.transactionId || ''), raw: data, confirmed_at: new Date() } });
+    await (prisma as any).pagos_payphone.update({ 
+      where: { id: pago.id }, 
+      data: { 
+        status: 'APPROVED', 
+        payphone_txn_id: String((data as any)?.transactionId || data?.id || ''), 
+        raw: data, 
+        confirmed_at: new Date() 
+      } 
+    });
+    
+    console.log('✅ Pago Payphone marcado como aprobado');
 
     // Generar factura y enviar correo (similar a approve)
     try {
-      const aprobada: any = await prisma.ordenes.findUnique({ where: { id: pago.orden_id }, include: { items: true, metodo_pago_ref: true, cliente: true, sorteo: true } as any });
+      console.log('🔍 Generando factura y enviando correo...');
+      const aprobada: any = await prisma.ordenes.findUnique({ 
+        where: { id: pago.orden_id }, 
+        include: { items: true, metodo_pago_ref: true, cliente: true, sorteo: true } as any 
+      });
+      
       if (aprobada?.cliente?.correo_electronico && aprobada?.items) {
         const fs = await import('node:fs');
         const path = await import('node:path');
         const { sendMail } = await import('../utils/mailer');
         const PDFDocument = (await import('pdfkit')).default;
+        
         const itemIds = (aprobada.items as any[]).map((i: any) => i.numero_sorteo_id as bigint);
-        const numeros = itemIds.length ? await prisma.numeros_sorteo.findMany({ where: { id: { in: itemIds } }, select: { id: true, numero_texto: true } }) : [];
+        const numeros = itemIds.length ? await prisma.numeros_sorteo.findMany({ 
+          where: { id: { in: itemIds } }, 
+          select: { id: true, numero_texto: true } 
+        }) : [];
+        
         const numeroMap = new Map(numeros.map((n) => [String(n.id), n.numero_texto]));
-        const lista = (aprobada.items as any[]).map((i: any) => `#${numeroMap.get(String(i.numero_sorteo_id)) ?? String(i.numero_sorteo_id)}`).join(', ');
+        const lista = (aprobada.items as any[]).map((i: any) => 
+          `#${numeroMap.get(String(i.numero_sorteo_id)) ?? String(i.numero_sorteo_id)}`
+        ).join(', ');
+        
         const dir = path.resolve(process.cwd(), 'uploads', 'facturas');
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        
         const pdfPath = path.resolve(dir, `${aprobada.codigo}.pdf`);
         const doc = new PDFDocument();
         doc.pipe(fs.createWriteStream(pdfPath));
+        
         doc.fontSize(16).text('Factura / Comprobante', { align: 'center' });
         doc.moveDown();
         doc.fontSize(12).text(`Orden: ${aprobada.codigo}`);
@@ -262,19 +380,130 @@ publicRouter.post('/payments/payphone/confirm', async (req: Request, res: Respon
         doc.moveDown();
         doc.text(`Números: ${lista}`);
         doc.end();
+        
         try {
           const adminUser = await (prisma as any).usuarios?.findFirst?.({}).catch(() => null);
-          const dataFactura: any = { orden_id: pago.orden_id, ruta_factura: path.relative(process.cwd(), pdfPath).replace(/\\/g, '/'), datos_factura: { orden_id: String(pago.orden_id) } };
+          const dataFactura: any = { 
+            orden_id: pago.orden_id, 
+            ruta_factura: path.relative(process.cwd(), pdfPath).replace(/\\/g, '/'), 
+            datos_factura: { orden_id: String(pago.orden_id) } 
+          };
           if (adminUser?.id) dataFactura.usuario_admin_id = adminUser.id;
           await prisma.facturas.create({ data: dataFactura });
         } catch {}
-        await sendMail({ to: aprobada.cliente.correo_electronico, subject: `Orden ${aprobada?.codigo} aprobada`, html: `<p>Hola ${aprobada.cliente.nombres},</p><p>Tu orden <strong>${aprobada?.codigo}</strong> ha sido aprobada.</p><p>Método de pago: ${aprobada?.metodo_pago_ref?.nombre ?? aprobada?.metodo_pago ?? ''}</p><p>Números asignados: ${lista}</p>`, attachments: [{ filename: `${aprobada.codigo}.pdf`, path: pdfPath }] });
+        
+        await sendMail({ 
+          to: aprobada.cliente.correo_electronico, 
+          subject: `Orden ${aprobada?.codigo} aprobada`, 
+          html: `<p>Hola ${aprobada.cliente.nombres},</p><p>Tu orden <strong>${aprobada?.codigo}</strong> ha sido aprobada.</p><p>Método de pago: ${aprobada?.metodo_pago_ref?.nombre ?? aprobada?.metodo_pago ?? ''}</p><p>Números asignados: ${lista}</p>`, 
+          attachments: [{ filename: `${aprobada.codigo}.pdf`, path: pdfPath }] 
+        });
+        
+        console.log('✅ Factura generada y correo enviado');
       }
-    } catch {}
+    } catch (emailError) {
+      console.error('⚠️ Error generando factura/enviando correo:', emailError);
+      // No fallar la transacción por errores de email
+    }
 
     const updated = await prisma.ordenes.findUnique({ where: { id: pago.orden_id }, include: { items: true } });
-    res.json({ ok: true, orden: updated });
-  } catch (e) { next(e); }
+    console.log('✅ Confirmación Payphone completada exitosamente');
+    
+    res.json({ ok: true, orden: updated, message: 'Pago confirmado exitosamente' });
+  } catch (e) { 
+    console.error('❌ Error en confirmación Payphone:', e);
+    next(e); 
+  }
+});
+
+// Endpoint de debugging para Payphone
+publicRouter.post('/payments/payphone/debug', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    console.log('🔍 Payphone debug request received');
+    
+    const token = process.env.PAYPHONE_TOKEN || '';
+    const storeId = process.env.PAYPHONE_STORE_ID || '';
+    
+    console.log('🔍 Payphone credentials check:', {
+      hasToken: !!token,
+      hasStoreId: !!storeId,
+      tokenLength: token.length,
+      tokenPreview: token.substring(0, 20) + '...',
+      storeId
+    });
+    
+    if (!token || !storeId) {
+      return res.status(400).json({
+        error: 'Credenciales incompletas',
+        details: { hasToken: !!token, hasStoreId: !!storeId }
+      });
+    }
+    
+    // Probar conexión básica con Payphone
+    try {
+      const testUrl = 'https://pay.payphonetodoesposible.com/api/Sale/Confirm';
+      const testBody = { 
+        storeId, 
+        clientTransactionId: 'DEBUG_TEST_' + Date.now() 
+      };
+      
+      console.log('🔍 Testing Payphone connection:', { url: testUrl, body: testBody });
+      
+      const resp = await fetch(testUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(testBody),
+      });
+      
+      const responseText = await resp.text();
+      let responseData;
+      
+      try {
+        responseData = JSON.parse(responseText);
+      } catch {
+        responseData = { rawResponse: responseText };
+      }
+      
+      console.log('🔍 Payphone test response:', {
+        status: resp.status,
+        statusText: resp.statusText,
+        headers: Object.fromEntries(resp.headers.entries()),
+        data: responseData
+      });
+      
+      return res.json({
+        ok: true,
+        connection: 'success',
+        response: {
+          status: resp.status,
+          statusText: resp.statusText,
+          data: responseData
+        },
+        credentials: {
+          storeId,
+          tokenLength: token.length,
+          tokenPreview: token.substring(0, 20) + '...'
+        }
+      });
+      
+    } catch (apiError: any) {
+      console.error('❌ Payphone connection test failed:', apiError);
+      return res.status(500).json({
+        error: 'Error de conexión con Payphone',
+        details: {
+          message: apiError.message,
+          stack: apiError.stack
+        }
+      });
+    }
+    
+  } catch (e) {
+    console.error('❌ Error en debug Payphone:', e);
+    next(e);
+  }
 });
 
 // Sorteos con números ganadores y métricas (para landing)

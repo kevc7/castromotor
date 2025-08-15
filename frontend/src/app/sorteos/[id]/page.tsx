@@ -67,7 +67,7 @@ export default function SorteoPage() {
   const [paqueteId, setPaqueteId] = useState<number | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const [msgType, setMsgType] = useState<'success' | 'error' | null>(null);
+  const [msgType, setMsgType] = useState<'success' | 'error' | 'info' | null>(null);
   const [metodos, setMetodos] = useState<any[]>([]);
   const [metodoPagoId, setMetodoPagoId] = useState<number | null>(null);
   const [verificationId, setVerificationId] = useState<number | null>(null);
@@ -420,47 +420,87 @@ export default function SorteoPage() {
                         // Abrir cajita Payphone inline con callbacks
                         // @ts-ignore
                         if (window?.PayPhone?.Button) {
+                          console.log('Payphone SDK config:', { storeId, amount, clientTransactionId });
+                          
                           // @ts-ignore
                           window.PayPhone.Button({
-                            token: '', // el SDK usará la configuración del store; el backend confirma con TOKEN
+                            storeId: storeId,
                             amount: amount,
-                            clientTransactionId,
-                            storeId,
-                            // responseUrl: responseUrl, // Comentado para usar callbacks
+                            clientTransactionId: clientTransactionId,
+                            currency: 'USD',
+                            countryCode: 'EC',
                             email: cliente.correo_electronico,
                             phoneNumber: cliente.telefono,
                             onSuccess: async (result: any) => {
-                              console.log('Payphone success:', result);
+                              console.log('Payphone success callback:', result);
                               try {
-                                // Confirmar pago con backend
-                                const confirmRes = await fetch(`${API_BASE}/api/payments/payphone/confirm`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ clientTransactionId })
-                                });
-                                const confirmData = await confirmRes.json();
-                                if (confirmRes.ok) {
-                                  setMsg('✅ Pago aprobado exitosamente. ¡Gracias por tu compra!');
-                                  setMsgType('success');
-                                  // Redirigir después de 2 segundos
-                                  setTimeout(() => {
-                                    window.location.href = '/';
-                                  }, 2000);
-                                } else {
-                                  throw new Error(confirmData?.error || 'Error confirmando pago');
+                                // Esperar 5 segundos para que Payphone procese internamente
+                                setMsg('⏳ Procesando confirmación del pago...');
+                                setMsgType('info');
+                                
+                                await new Promise(resolve => setTimeout(resolve, 5000));
+                                
+                                // Intentar confirmación con retry (máximo 3 intentos)
+                                let attempts = 0;
+                                let success = false;
+                                
+                                while (attempts < 3 && !success) {
+                                  attempts++;
+                                  console.log(`Intento de confirmación ${attempts}/3`);
+                                  
+                                  try {
+                                    const confirmRes = await fetch(`${API_BASE}/api/payments/payphone/confirm`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ clientTransactionId })
+                                    });
+                                    
+                                    console.log(`Backend confirm response (intento ${attempts}):`, confirmRes.status);
+                                    const confirmData = await confirmRes.json();
+                                    console.log(`Backend confirm data (intento ${attempts}):`, confirmData);
+                                    
+                                    if (confirmRes.ok) {
+                                      success = true;
+                                      setMsg('✅ Pago aprobado exitosamente. ¡Gracias por tu compra!');
+                                      setMsgType('success');
+                                      // Redirigir después de 3 segundos
+                                      setTimeout(() => {
+                                        window.location.href = '/';
+                                      }, 3000);
+                                    } else {
+                                      throw new Error(confirmData?.error || 'Error confirmando pago');
+                                    }
+                                  } catch (error: any) {
+                                    console.error(`Error en intento ${attempts}:`, error);
+                                    
+                                    if (attempts < 3) {
+                                      setMsg(`⏳ Reintentando confirmación... (${attempts}/3)`);
+                                      setMsgType('info');
+                                      // Esperar 2 segundos antes del siguiente intento
+                                      await new Promise(resolve => setTimeout(resolve, 2000));
+                                    } else {
+                                      throw error;
+                                    }
+                                  }
                                 }
+                                
+                                if (!success) {
+                                  throw new Error('No se pudo confirmar el pago después de 3 intentos');
+                                }
+                                
                               } catch (error: any) {
+                                console.error('Error final en onSuccess:', error);
                                 setMsg(`❌ Error: ${error.message}`);
                                 setMsgType('error');
                               }
                             },
                             onError: (error: any) => {
-                              console.error('Payphone error:', error);
+                              console.error('Payphone error callback:', error);
                               setMsg(`❌ Error en el pago: ${error.message || 'Pago no aprobado'}`);
                               setMsgType('error');
                             },
                             onCancel: () => {
-                              console.log('Payphone cancelled');
+                              console.log('Payphone cancelled callback');
                               setMsg('❌ Pago cancelado por el usuario');
                               setMsgType('error');
                             }
@@ -481,6 +521,40 @@ export default function SorteoPage() {
                     {payOpening ? 'Abriendo Payphone…' : 'Pagar con Payphone'}
                   </button>
                 )}
+                
+                {/* Botón de debug para Payphone */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      setMsg('🔍 Probando conexión con Payphone...');
+                      setMsgType('info');
+                      
+                      const debugRes = await fetch(`${API_BASE}/api/payments/payphone/debug`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                      });
+                      
+                      const debugData = await debugRes.json();
+                      console.log('Payphone debug response:', debugData);
+                      
+                      if (debugRes.ok) {
+                        setMsg(`✅ Conexión exitosa: ${debugData.response.status} - ${debugData.response.statusText}`);
+                        setMsgType('success');
+                      } else {
+                        setMsg(`❌ Error de conexión: ${debugData.error}`);
+                        setMsgType('error');
+                      }
+                    } catch (error: any) {
+                      console.error('Error en debug Payphone:', error);
+                      setMsg(`❌ Error: ${error.message}`);
+                      setMsgType('error');
+                    }
+                  }}
+                  className="w-full sm:w-auto px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-sm"
+                >
+                  🔍 Debug Payphone
+                </button>
               </div>
                 </div>
               </section>
@@ -494,7 +568,11 @@ export default function SorteoPage() {
               <div className={`${isVerified ? 'text-emerald-400' : 'text-amber-300'}`}>{isVerified ? 'Código verificado' : 'Código no verificado'}</div>
                   </div>
             {msg && (
-              <div className={`mt-3 rounded-lg p-3 text-sm ${msgType === 'success' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'}`}>
+              <div className={`mt-3 rounded-lg p-3 text-sm ${
+                msgType === 'success' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 
+                msgType === 'info' ? 'bg-blue-500/10 text-blue-300 border border-blue-500/20' :
+                'bg-rose-500/10 text-rose-300 border border-rose-500/20'
+              }`}>
                 {msg}
                 {msgType === 'success' && (
                   <div className="mt-2">
