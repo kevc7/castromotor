@@ -120,30 +120,70 @@ export default function AdminClient() {
     e.preventDefault();
     const formEl = e.currentTarget;
     const form = new FormData(formEl);
+    
+    // Validaciones del frontend
+    const nombre = String(form.get("nombre") || "").trim();
+    const descripcion = String(form.get("descripcion") || "").trim();
+    const cantidadDigitos = Number(form.get("cantidad_digitos"));
+    const precioPorNumero = Number(form.get("precio_por_numero"));
+    const cantidadPremios = Number(form.get("cantidad_premios"));
+
+    // Validaciones
+    if (!nombre) {
+      setErrorMsg("El nombre del sorteo es obligatorio");
+      return;
+    }
+    
+    if (cantidadDigitos < 1 || cantidadDigitos > 10 || !Number.isInteger(cantidadDigitos)) {
+      setErrorMsg("La cantidad de dígitos debe ser un número entero entre 1 y 10");
+      return;
+    }
+    
+    if (precioPorNumero <= 0 || isNaN(precioPorNumero)) {
+      setErrorMsg("El precio por número debe ser mayor a 0");
+      return;
+    }
+    
+    if (cantidadPremios < 1 || cantidadPremios > 100 || !Number.isInteger(cantidadPremios)) {
+      setErrorMsg("La cantidad de premios debe ser un número entero entre 1 y 100");
+      return;
+    }
+
+    // Validar que no se exceda el máximo de números posibles
+    const maxNumeros = Math.pow(10, cantidadDigitos);
+    if (cantidadPremios > maxNumeros) {
+      setErrorMsg(`No puede haber más premios (${cantidadPremios}) que números disponibles (${maxNumeros})`);
+      return;
+    }
+
     setCreateLoading(true);
     setErrorMsg(null);
     try {
       const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
-    const res = await fetch(`${API_BASE}/api/admin/sorteos`, {
+      const res = await fetch(`${API_BASE}/api/admin/sorteos`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({
-          nombre: form.get("nombre"),
-          descripcion: form.get("descripcion") || null,
-          cantidad_digitos: Number(form.get("cantidad_digitos")),
-          precio_por_numero: Number(form.get("precio_por_numero")),
-          cantidad_premios: Number(form.get("cantidad_premios")),
+          nombre,
+          descripcion: descripcion || null,
+          cantidad_digitos: cantidadDigitos,
+          precio_por_numero: precioPorNumero,
+          cantidad_premios: cantidadPremios,
           generar_numeros: true,
         }),
       });
-    if (res.status === 401) { window.location.href = '/admin/login'; return; }
+      if (res.status === 401) { window.location.href = '/admin/login'; return; }
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Error al crear sorteo");
       setSorteo(data.sorteo);
       await cargarEstado(data.sorteo.id);
       await cargarSorteos();
+      // Generar inputs para premios según la cantidad de premios-vacantes
+      setPremiosInputs(Array(cantidadPremios).fill(""));
       // limpiar formulario
       formEl.reset();
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "Error desconocido al crear sorteo");
     } finally {
       setCreateLoading(false);
     }
@@ -151,12 +191,26 @@ export default function AdminClient() {
 
   async function crearPremios(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!sorteo?.id) return;
+    if (!sorteo?.id) {
+      setErrorMsg("No hay un sorteo seleccionado");
+      return;
+    }
+    
     const descripciones = premiosInputs
       .map((s) => s.trim())
       .filter(Boolean)
       .map((d) => ({ descripcion: d }));
-    if (descripciones.length === 0) return;
+      
+    if (descripciones.length === 0) {
+      setErrorMsg("Debe ingresar al menos una descripción de premio");
+      return;
+    }
+    
+    if (descripciones.length !== premiosInputs.length) {
+      setErrorMsg("Debe completar todas las descripciones de premios");
+      return;
+    }
+    
     // La cantidad de inputs está fijada por sorteo.cantidad_premios
     setPremiosLoading(true);
     setErrorMsg(null);
@@ -172,6 +226,8 @@ export default function AdminClient() {
       if (!res.ok) throw new Error(data?.error || "Error al crear premios");
       setPremios(data.premios);
       await cargarEstado(sorteo.id);
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "Error desconocido al crear premios");
     } finally {
       setPremiosLoading(false);
     }
@@ -276,15 +332,38 @@ export default function AdminClient() {
               </label>
               <label className="grid gap-1">
                 <span className="text-xs text-slate-400">Cantidad de dígitos</span>
-                <input className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" name="cantidad_digitos" type="number" min={1} max={10} required />
+                <input 
+                  className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" 
+                  name="cantidad_digitos" 
+                  type="number" 
+                  min={1} 
+                  max={10} 
+                  step={1}
+                  required 
+                />
               </label>
               <label className="grid gap-1">
                 <span className="text-xs text-slate-400">Precio por número</span>
-                <input className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" name="precio_por_numero" type="number" step="0.01" required />
+                <input 
+                  className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" 
+                  name="precio_por_numero" 
+                  type="number" 
+                  step="0.01" 
+                  min="0.01"
+                  required 
+                />
               </label>
               <label className="grid gap-1">
                 <span className="text-xs text-slate-400">Cantidad de premios (vacantes)</span>
-                <input className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" name="cantidad_premios" type="number" min={1} required />
+                <input 
+                  className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" 
+                  name="cantidad_premios" 
+                  type="number" 
+                  min={1} 
+                  max={100}
+                  step={1}
+                  required 
+                />
               </label>
               <div className="md:col-span-2 flex gap-3">
                 <button disabled={createLoading} className="px-4 py-2 rounded-md bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50">
@@ -305,53 +384,22 @@ export default function AdminClient() {
                 {!sorteo?.id && (
                   <div className="text-sm text-red-600">Debes crear un sorteo primero para definir premios.</div>
                 )}
-                {sorteo?.id && (
-                  <div className="space-y-2">
-                    <div className="text-sm text-slate-300">Agregar premio:</div>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={premiosInputs[premiosInputs.length - 1] || ""}
-                        onChange={(e) => {
-                          const newInputs = [...premiosInputs];
-                          newInputs[newInputs.length - 1] = e.target.value;
-                          setPremiosInputs(newInputs);
-                        }}
-                        placeholder="Descripción del premio"
-                        className="flex-1 border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setPremiosInputs([...premiosInputs, ""])}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
-                      >
-                        +
-                      </button>
-                    </div>
-                    {premiosInputs.slice(0, -1).map((input, index) => (
-                      <div key={index} className="flex gap-2">
+                {sorteo?.id && premiosInputs.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {premiosInputs.map((value, idx) => (
+                      <label key={idx} className="grid gap-1">
+                        <span className="text-xs text-slate-500">Descripción del premio #{idx + 1}</span>
                         <input
-                          type="text"
-                          value={input}
+                          className="border rounded-md px-3 py-2"
+                          placeholder={`Ej: Televisor 50"`}
+                          value={value}
                           onChange={(e) => {
-                            const newInputs = [...premiosInputs];
-                            newInputs[index] = e.target.value;
-                            setPremiosInputs(newInputs);
+                            const copy = [...premiosInputs];
+                            copy[idx] = e.target.value;
+                            setPremiosInputs(copy);
                           }}
-                          placeholder="Descripción del premio"
-                          className="flex-1 border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white"
                         />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newInputs = premiosInputs.filter((_, i) => i !== index);
-                            setPremiosInputs(newInputs);
-                          }}
-                          className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-md"
-                        >
-                          -
-                        </button>
-                      </div>
+                      </label>
                     ))}
                   </div>
                 )}

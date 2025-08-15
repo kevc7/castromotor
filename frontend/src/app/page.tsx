@@ -247,7 +247,7 @@ export default function HomePage() {
                 </div>
               );
             })}
-          </div>
+      </div>
         </section>
       )}
 
@@ -415,7 +415,7 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-        </div>
+      </div>
       </footer>
     </main>
   );

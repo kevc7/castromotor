@@ -339,12 +339,27 @@ adminRouter.post("/sorteos", requireAuth, async (req, res, next) => {
       descripcion: z.string().optional(),
       cantidad_digitos: z.number().int().min(1).max(10),
       precio_por_numero: z.number().positive(),
-      cantidad_premios: z.number().int().min(1),
+      cantidad_premios: z.number().int().min(1).max(100),
       fecha_inicio: z.string().datetime().optional(),
       fecha_fin: z.string().datetime().optional(),
       generar_numeros: z.boolean().optional()
     });
     const body = bodySchema.parse(req.body);
+
+    // Validación adicional: verificar que no se exceda el máximo de números posibles
+    const maxNumeros = Math.pow(10, body.cantidad_digitos);
+    if (body.cantidad_premios > maxNumeros) {
+      return res.status(400).json({ 
+        error: `No puede haber más premios (${body.cantidad_premios}) que números disponibles (${maxNumeros})` 
+      });
+    }
+
+    // Validación adicional: verificar que el total de números no sea excesivo
+    if (body.generar_numeros && maxNumeros > 1000000) {
+      return res.status(400).json({ 
+        error: `Demasiados números para generar (${maxNumeros}). Máximo permitido: 1,000,000` 
+      });
+    }
 
     const sorteo = await prisma.sorteos.create({
       data: {
