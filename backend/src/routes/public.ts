@@ -365,7 +365,7 @@ publicRouter.get('/paquetes_publicados', async (_req: Request, res: Response, ne
   }
 });
 
-// Detalle de sorteo con paquetes y conteos
+// Detalle de sorteo con paquetes, conteos e imágenes
 publicRouter.get("/sorteos/:id", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const params = z.object({ id: z.string() }).parse(req.params);
@@ -376,7 +376,10 @@ publicRouter.get("/sorteos/:id", async (req: Request, res: Response, next: NextF
     const paquetes = await (prisma as any).paquetes.findMany({ where: { sorteo_id: sorteoId, estado: 'publicado' }, orderBy: { cantidad_numeros: 'asc' } });
     const total = await prisma.numeros_sorteo.count({ where: { sorteo_id: sorteoId } });
     const vendidos = await prisma.numeros_sorteo.count({ where: { sorteo_id: sorteoId, estado: "vendido" } });
-    res.json({ sorteo, paquetes, conteos: { total, vendidos, disponibles: total - vendidos } });
+    const imagenes = (prisma as any)?.sorteos_imagenes?.findMany
+      ? await (prisma as any).sorteos_imagenes.findMany({ where: { sorteo_id: sorteoId }, orderBy: [{ es_portada: 'desc' }, { orden: 'asc' }, { id: 'asc' }] })
+      : [];
+    res.json({ sorteo, paquetes, imagenes, conteos: { total, vendidos, disponibles: total - vendidos } });
   } catch (e) {
     next(e);
   }

@@ -5,6 +5,56 @@ import { useParams, useRouter } from "next/navigation";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001";
 
+function Carousel({ images }: { images: any[] }) {
+  const [index, setIndex] = useState(0);
+  const current = images?.[index];
+  
+  console.log('Carousel render:', { images, current, index });
+  
+  const getImageUrl = (url: string) => {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+    // Si es una ruta relativa, construir la URL completa
+    const baseUrl = API_BASE.replace(/\/$/, '');
+    const fullUrl = `${baseUrl}${url.startsWith('/') ? url : `/${url}`}`;
+    console.log('Image URL construction:', { original: url, baseUrl, fullUrl });
+    return fullUrl;
+  };
+  
+  return (
+    <div className="absolute inset-0">
+      {current && (
+        <img
+          src={getImageUrl(current.url)}
+          alt={current.alt || "Sorteo"}
+          className="absolute inset-0 w-full h-full object-cover"
+          loading="eager"
+          onError={(e) => console.error('Error loading image:', current.url, e)}
+          onLoad={() => console.log('Image loaded successfully:', current.url)}
+        />
+      )}
+      {images.length > 1 && (
+        <div className="absolute inset-x-0 bottom-2 flex items-center justify-center gap-2">
+          {images.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => setIndex(i)}
+              className={`h-2 w-2 rounded-full ${i === index ? 'bg-white' : 'bg-white/40'}`}
+              aria-label={`Imagen ${i + 1}`}
+            />)
+          )}
+        </div>
+      )}
+      {images.length > 1 && (
+        <>
+          <button onClick={() => setIndex((i) => (i - 1 + images.length) % images.length)} className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white rounded-full h-9 w-9">‹</button>
+          <button onClick={() => setIndex((i) => (i + 1) % images.length)} className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white rounded-full h-9 w-9">›</button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function SorteoInfoPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -12,6 +62,7 @@ export default function SorteoInfoPage() {
   const [loading, setLoading] = useState(true);
   const [cantidadPref, setCantidadPref] = useState<number>(1);
   const [cantidadMsg, setCantidadMsg] = useState<string | null>(null);
+  const [imagenes, setImagenes] = useState<any[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -25,6 +76,8 @@ export default function SorteoInfoPage() {
         const gData = await gRes.json();
         const premios = (gData.sorteos || []).find((s: any) => String(s.id) === String(id))?.premios || [];
         setData({ ...(sData || {}), premios });
+        setImagenes(sData?.imagenes || []);
+        console.log('Sorteo info data received:', sData);
       } finally {
         setLoading(false);
       }
@@ -42,6 +95,24 @@ export default function SorteoInfoPage() {
         ) : (
           <>
             <h1 className="text-3xl font-bold tracking-tight">{data?.sorteo?.nombre}</h1>
+            {/* Debug: mostrar info de imágenes */}
+            {imagenes && (
+              <div className="mt-2 text-xs text-slate-400">
+                Debug: {imagenes.length} imágenes cargadas
+              </div>
+            )}
+            {/* Carrusel de imágenes */}
+            {imagenes && imagenes.length > 0 ? (
+              <div className="mt-4 w-full rounded-xl overflow-hidden border border-white/10 bg-black/30">
+                <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
+                  <Carousel images={imagenes} />
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 text-sm text-slate-500">
+                No hay imágenes para mostrar
+              </div>
+            )}
             <p className="text-slate-300 mt-1">{data?.sorteo?.descripcion}</p>
             <div className="mt-4 text-sm text-slate-200">Precio por número: ${Number(data?.sorteo?.precio_por_numero || 0).toFixed(2)}</div>
             {conteos && (

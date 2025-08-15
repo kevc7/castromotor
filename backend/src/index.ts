@@ -43,6 +43,10 @@ app.use(
   express.static(path.resolve(process.cwd(), "uploads"))
 );
 
+// Log para debug
+console.log('Static files served from:', path.resolve(process.cwd(), "uploads"));
+console.log('Uploads directory exists:', fs.existsSync(path.resolve(process.cwd(), "uploads")));
+
 // Manejador de errores global: responder siempre JSON
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const status = Number(err?.status || err?.statusCode || 400);

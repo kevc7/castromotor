@@ -51,8 +51,25 @@ model sorteos {
   premios        premios[]
   paquetes       paquetes[]
   ordenes        ordenes[]
+  imagenes       sorteos_imagenes[]
 
   @@map("sorteos")
+}
+
+/// Galería de imágenes por sorteo
+model sorteos_imagenes {
+  id             BigInt   @id @default(autoincrement())
+  sorteo_id      BigInt
+  sorteo         sorteos  @relation(fields: [sorteo_id], references: [id], onDelete: Cascade)
+  url            String
+  url_thumb      String?
+  alt            String?
+  orden          Int      @default(0)
+  es_portada     Boolean  @default(false)
+  fecha_creacion DateTime @default(now())
+
+  @@index([sorteo_id, orden])
+  @@map("sorteos_imagenes")
 }
 
 model ordenes {

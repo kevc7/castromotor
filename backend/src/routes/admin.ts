@@ -5,6 +5,9 @@ import { asignarNumerosAPremios } from "../services/premios";
 import { Prisma } from "@prisma/client";
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import path from 'node:path';
+import fs from 'node:fs';
+import multer from 'multer';
 
 export const adminRouter = Router();
 
@@ -37,6 +40,40 @@ function requireAuth(req: any, res: any, next: any) {
     next();
   } catch { return res.status(401).json({ error: 'Token inválido' }); }
 }
+
+// Helpers para almacenamiento de imágenes de sorteos
+function ensureDir(dirPath: string) {
+  if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+}
+
+const uploadsRoot = path.resolve(process.cwd(), 'uploads');
+ensureDir(uploadsRoot);
+
+const sorteosRoot = path.resolve(uploadsRoot, 'sorteos');
+ensureDir(sorteosRoot);
+
+const storageSorteos = multer.diskStorage({
+  destination: (req, _file, cb) => {
+    const id = String((req.params as any)?.id || 'tmp');
+    const dir = path.resolve(sorteosRoot, id);
+    ensureDir(dir);
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const name = `${Date.now()}-${Math.random().toString(36).slice(2,8)}${ext}`;
+    cb(null, name);
+  }
+});
+const uploadSorteos = multer({
+  storage: storageSorteos,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (_req, file, cb) => {
+    const ok = /image\/(jpeg|png|webp)/.test(file.mimetype);
+    if (!ok) return (cb as unknown as (err: any, acceptFile?: boolean) => void)(new Error('Tipo de archivo inválido'));
+    (cb as unknown as (err: any, acceptFile?: boolean) => void)(null, true);
+  }
+});
 // Estadísticas generales de órdenes/ventas
 adminRouter.get('/stats', requireAuth, async (_req, res, next) => {
   try {
@@ -133,6 +170,89 @@ adminRouter.post('/metodos_pago/seed', requireAuth, async (_req, res, next) => {
   } catch (e) {
     next(e);
   }
+});
+
+// =========================
+//  Galería de sorteos (admin)
+// =========================
+
+// Listar imágenes de un sorteo
+adminRouter.get('/sorteos/:id/imagenes', requireAuth, async (req, res, next) => {
+  try {
+    const id = BigInt(String((req.params as any)?.id));
+    const imagenes = await (prisma as any).sorteos_imagenes.findMany({ where: { sorteo_id: id }, orderBy: [{ es_portada: 'desc' }, { orden: 'asc' }, { id: 'asc' }] });
+    res.json({ imagenes });
+  } catch (e) { next(e); }
+});
+
+// Subir 1..n imágenes
+adminRouter.post('/sorteos/:id/imagenes', requireAuth, uploadSorteos.array('files', 10), async (req: any, res, next) => {
+  try {
+    const id = BigInt(String((req.params as any)?.id));
+    const files = (req.files as Express.Multer.File[]) || [];
+    if (files.length === 0) return res.status(400).json({ error: 'Archivo(s) requerido(s) en campo files[]' });
+
+    const created: any[] = [];
+    for (const f of files) {
+      const dir = path.dirname(f.path);
+      const base = path.parse(f.path).name;
+      const thumbPath = path.resolve(dir, `${base}-thumb.webp`);
+      const heroPath = path.resolve(dir, `${base}-hero.webp`);
+
+      // Normalización: 16:9, grande y miniatura (sin dependencia de sharp en tipado)
+      // @ts-ignore – declaramos dinámico para evitar tipos en build
+      const sharpLib = (await import('sharp')).default as any;
+      await sharpLib(f.path).resize(1600, 900, { fit: 'cover', position: 'centre' }).webp({ quality: 80 }).toFile(heroPath);
+      await sharpLib(f.path).resize(800, 450, { fit: 'cover', position: 'centre' }).webp({ quality: 70 }).toFile(thumbPath);
+      try { fs.unlinkSync(f.path); } catch {}
+
+      const relHero = path.relative(process.cwd(), heroPath).replace(/\\/g, '/');
+      const relThumb = path.relative(process.cwd(), thumbPath).replace(/\\/g, '/');
+
+      const count = await (prisma as any).sorteos_imagenes.count({ where: { sorteo_id: id } });
+      const row = await (prisma as any).sorteos_imagenes.create({ data: { sorteo_id: id, url: `/${relHero}`, url_thumb: `/${relThumb}`, orden: count, es_portada: count === 0 } });
+      created.push(row);
+    }
+    res.json({ imagenes: created });
+  } catch (e) { next(e); }
+});
+
+// Actualizar orden masivo
+adminRouter.patch('/sorteos/:id/imagenes/orden', requireAuth, async (req, res, next) => {
+  try {
+    const id = BigInt(String((req.params as any)?.id));
+    const body = z.array(z.object({ id: z.coerce.bigint(), orden: z.number().int().min(0) })).parse(req.body);
+    await prisma.$transaction(body.map((b: any) => (prisma as any).sorteos_imagenes.update({ where: { id: b.id, sorteo_id: id } as any, data: { orden: Number(b.orden) } })) as any);
+    const imagenes = await (prisma as any).sorteos_imagenes.findMany({ where: { sorteo_id: id }, orderBy: [{ es_portada: 'desc' }, { orden: 'asc' }, { id: 'asc' }] });
+    res.json({ imagenes });
+  } catch (e) { next(e); }
+});
+
+// Marcar portada o editar alt
+adminRouter.patch('/sorteos/:id/imagenes/:imgId', requireAuth, async (req, res, next) => {
+  try {
+    const id = BigInt(String((req.params as any)?.id));
+    const imgId = BigInt(String((req.params as any)?.imgId));
+    const body = z.object({ es_portada: z.boolean().optional(), alt: z.string().optional() }).parse(req.body);
+    if (body.es_portada) {
+      await (prisma as any).sorteos_imagenes.updateMany({ where: { sorteo_id: id }, data: { es_portada: false } });
+    }
+    const updated = await (prisma as any).sorteos_imagenes.update({ where: { id: imgId }, data: body as any });
+    res.json({ imagen: updated });
+  } catch (e) { next(e); }
+});
+
+// Eliminar imagen (borra archivos del disco)
+adminRouter.delete('/sorteos/:id/imagenes/:imgId', requireAuth, async (req, res, next) => {
+  try {
+    const imgId = BigInt(String((req.params as any)?.imgId));
+    const row: any = await (prisma as any).sorteos_imagenes.findUnique({ where: { id: imgId } });
+    if (!row) return res.status(404).json({ error: 'Imagen no encontrada' });
+    const toRemove = [row.url, row.url_thumb].filter(Boolean).map((p: string) => path.resolve(process.cwd(), p.replace(/^\//, '')));
+    for (const p of toRemove) { try { fs.unlinkSync(p); } catch {} }
+    await (prisma as any).sorteos_imagenes.delete({ where: { id: imgId } });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
 });
 
 // Asegurar método de pago Payphone presente (idempotente)
