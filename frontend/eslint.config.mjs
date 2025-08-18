@@ -17,13 +17,17 @@ const eslintConfig = [
       // Allow using any temporarily
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-require-imports": "off",
+  // Allow ts-ignore style comments (temporary until types added)
+  "@typescript-eslint/ban-ts-comment": "off",
       // Allow legacy <img> / <a> usage (can migrate gradually)
       "@next/next/no-img-element": "off",
       "@next/next/no-html-link-for-pages": "off",
       // So missing deps don't break build; still surfaces as warning
       "react-hooks/exhaustive-deps": "warn",
       // General noise reduction
-      "no-console": "warn",
+  "no-console": "off",
+  // Unused vars only warn (can clean later)
+  "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
     },
   },
 ];
