@@ -40,11 +40,9 @@ publicRouter.post('/verificaciones/solicitar', async (req: Request, res: Respons
     let mailError = null;
     try {
       const { sendMail } = await import('../utils/mailer');
-      await sendMail({
-        to: correo_electronico,
-        subject: 'Tu código de verificación',
-        html: `<p>Tu código es <strong style="font-size:18px">${codigo}</strong>. Vence en 10 minutos.</p>`
-      });
+  const { correoVerificacion } = await import('../emails/templates');
+  const html = correoVerificacion({ codigo, minutos: 10, logoUrl: process.env.BRAND_LOGO_URL || null, year: new Date().getFullYear() });
+  await sendMail({ to: correo_electronico, subject: 'Tu código de verificación', html });
       mailOk = true;
     } catch (err) {
       console.error('Error enviando correo de verificación:', err);
@@ -149,6 +147,26 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
     const clientTxnId = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + (Number(process.env.PAYPHONE_TIMEOUT_MIN || 5) * 60 * 1000));
     await (prisma as any).pagos_payphone.create({ data: { orden_id: orden.id, client_txn_id: clientTxnId, status: 'INIT', amount: monto_total, expires_at: expiresAt } });
+
+    // Correo de orden recibida (Payphone)
+    try {
+      if (cliente?.correo_electronico) {
+        const { sendMail } = await import('../utils/mailer');
+        const { correoOrdenRecibida } = await import('../emails/templates');
+        const sorteoNombre = sorteo?.nombre || '';
+        const html = correoOrdenRecibida({
+          clienteNombre: cliente.nombres || '',
+          codigo,
+          sorteoNombre,
+          cantidad,
+          monto: `$${monto_total.toFixed(2)}`,
+          metodoPago: 'Payphone',
+          logoUrl: process.env.BRAND_LOGO_URL || null,
+          year: new Date().getFullYear()
+        });
+        await sendMail({ to: cliente.correo_electronico, subject: `Orden recibida ${codigo}`, html });
+      }
+    } catch (e) { console.error('Error enviando correo orden recibida (Payphone):', e); }
 
     const payload = {
       storeId: process.env.PAYPHONE_STORE_ID,
@@ -392,10 +410,21 @@ publicRouter.post('/payments/payphone/confirm', async (req: Request, res: Respon
           await prisma.facturas.create({ data: dataFactura });
         } catch {}
         
+        const { correoAprobacion } = await import('../emails/templates');
+        const htmlAprobacion = correoAprobacion({
+          clienteNombre: aprobada.cliente.nombres || '',
+            codigo: aprobada.codigo,
+            sorteoNombre: aprobada.sorteo?.nombre,
+            numeros: (aprobada.items as any[]).map(i => `#${numeroMap.get(String(i.numero_sorteo_id)) ?? String(i.numero_sorteo_id)}`),
+            metodoPago: aprobada?.metodo_pago_ref?.nombre ?? aprobada?.metodo_pago ?? '',
+            monto: aprobada.monto_total ? `$${aprobada.monto_total}` : undefined,
+            logoUrl: process.env.BRAND_LOGO_URL || null,
+            year: new Date().getFullYear()
+        });
         await sendMail({ 
           to: aprobada.cliente.correo_electronico, 
           subject: `Orden ${aprobada?.codigo} aprobada`, 
-          html: `<p>Hola ${aprobada.cliente.nombres},</p><p>Tu orden <strong>${aprobada?.codigo}</strong> ha sido aprobada.</p><p>Método de pago: ${aprobada?.metodo_pago_ref?.nombre ?? aprobada?.metodo_pago ?? ''}</p><p>Números asignados: ${lista}</p>`, 
+          html: htmlAprobacion, 
           attachments: [{ filename: `${aprobada.codigo}.pdf`, path: pdfPath }] 
         });
         
@@ -612,6 +641,14 @@ publicRouter.get('/paquetes_publicados', async (_req: Request, res: Response, ne
   }
 });
 
+// Social posts públicos activos
+publicRouter.get('/social_posts', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const posts = await (prisma as any).social_posts.findMany({ where: { activo: true }, orderBy: [{ orden: 'asc' }, { id: 'asc' }] });
+    res.json({ posts });
+  } catch (e) { next(e); }
+});
+
 // Detalle de sorteo con paquetes, conteos e imágenes
 publicRouter.get("/sorteos/:id", async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -658,101 +695,13 @@ publicRouter.post("/clients", async (req: Request, res: Response, next: NextFunc
   }
 });
 
-// Crear orden (pendiente)
-publicRouter.post("/orders", async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const body = z
-      .object({
-        cliente_id: z.coerce.bigint(),
-        sorteo_id: z.coerce.bigint(),
-        cantidad_numeros: z.number().int().min(1).optional(),
-        paquete_id: z.number().int().optional(),
-        metodo_pago: z.string().optional(),
-        metodo_pago_id: z.number().int().optional(),
-      })
-      .parse(req.body);
-
-    // Calcular monto total
-    const sorteo = await prisma.sorteos.findUnique({ where: { id: body.sorteo_id } });
-    if (!sorteo) return res.status(404).json({ error: "Sorteo no encontrado" });
-    let cantidad = body.cantidad_numeros ?? 0;
-    let monto_total = 0;
-    if (body.paquete_id) {
-      const paquete = await (prisma as any).paquetes.findUnique({ where: { id: BigInt(body.paquete_id) } });
-      if (!paquete || paquete.sorteo_id !== body.sorteo_id) return res.status(400).json({ error: "Paquete inválido" });
-      cantidad = Number(paquete.cantidad_numeros || 0);
-      monto_total = Number(paquete.precio_total || 0);
-    } else if (cantidad > 0) {
-      monto_total = Number(sorteo.precio_por_numero) * cantidad;
-    } else {
-      return res.status(400).json({ error: "Debe indicar cantidad_numeros o paquete_id" });
-    }
-    const codigo = `OR-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-    // Validación previa de stock disponible
-    const disponibles = await prisma.numeros_sorteo.count({ where: { sorteo_id: body.sorteo_id, estado: 'disponible' } });
-    if (disponibles < cantidad) {
-      return res.status(400).json({ error: `No hay suficientes números disponibles para este sorteo. Quedan ${disponibles} y solicitaste ${cantidad}.` });
-    }
-
-    // Obtener nombre de método de pago si viene id
-    let metodoNombre: string | null = null;
-    if (body.metodo_pago_id) {
-      const mp: any = await (prisma as any).metodos_pago.findUnique({ where: { id: BigInt(body.metodo_pago_id) } });
-      metodoNombre = mp?.nombre ?? null;
-    }
-
-    const orden = await prisma.ordenes.create({
-      data: {
-        codigo,
-        cliente_id: body.cliente_id,
-        sorteo_id: body.sorteo_id,
-        metodo_pago: metodoNombre ?? body.metodo_pago ?? null,
-        // metodo_pago_id requiere regenerar Prisma; casteamos meanwhile
-        metodo_pago_id: body.metodo_pago_id ? BigInt(body.metodo_pago_id) : null,
-        estado_pago: "pendiente",
-        monto_total,
-        cantidad_numeros: cantidad,
-      } as any,
-    });
-
-    // Reservar números disponibles
-    await prisma.$transaction(async (tx) => {
-      const seleccion = await (tx as any).$queryRaw<{ id: bigint }[]>`
-        SELECT id FROM numeros_sorteo
-        WHERE sorteo_id = ${body.sorteo_id} AND estado = 'disponible'
-        ORDER BY random()
-        LIMIT ${cantidad}
-        FOR UPDATE SKIP LOCKED
-      `;
-      if (seleccion.length < cantidad) {
-        throw new Error(`No hay suficientes números disponibles para reservar (${seleccion.length}/${cantidad}).`);
-      }
-      const ids = seleccion.map((s: { id: bigint }) => s.id);
-      await tx.numeros_sorteo.updateMany({ where: { id: { in: ids } }, data: { estado: 'reservado', orden_id: orden.id } });
-    });
-
-    // Enviar correo de recepción si cliente tiene correo
-    try {
-      const cliente = await prisma.clientes.findUnique({ where: { id: body.cliente_id } });
-      const metodo = metodoNombre ? `Método de pago: ${metodoNombre}` : '';
-      if (cliente?.correo_electronico) {
-        const { sendMail } = await import('../utils/mailer');
-        await sendMail({
-          to: cliente.correo_electronico,
-          subject: `Hemos recibido tu orden ${codigo}`,
-          html: `<p>Hola ${cliente.nombres},</p>
-                 <p>Recibimos tu orden <strong>${codigo}</strong> para el sorteo ${String(body.sorteo_id)} por ${cantidad} tickets.</p>
-                 <p>${metodo}</p>
-                 <p>Revisaremos tu comprobante y te avisaremos por este medio.</p>`
-        });
-      }
-    } catch {}
-
-    res.json({ orden });
-  } catch (e) {
-    next(e);
-  }
+// Crear orden (pendiente) - DEPRECADO
+publicRouter.post("/orders", async (_req: Request, res: Response) => {
+  return res.status(410).json({
+    error: "Endpoint /orders deprecado. Usa /orders/complete (multipart con comprobante) o el flujo Payphone.",
+    deprecated: true,
+    replacement: ["POST /orders/complete", "POST /payphone/init"],
+  });
 });
 
 // Upload comprobante
@@ -769,18 +718,12 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-publicRouter.post("/orders/:id/comprobante", upload.single("file"), async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const params = z.object({ id: z.string() }).parse(req.params);
-    const ordenId = BigInt(params.id);
-    if (!req.file) return res.status(400).json({ error: "Archivo requerido (file)" });
-
-    const ruta = path.relative(process.cwd(), req.file.path).replace(/\\/g, "/");
-    const orden = await prisma.ordenes.update({ where: { id: ordenId }, data: { ruta_comprobante: ruta } });
-    res.json({ orden });
-  } catch (e) {
-    next(e);
-  }
+publicRouter.post("/orders/:id/comprobante", upload.single("file"), async (_req: Request, res: Response) => {
+  return res.status(410).json({
+    error: "Endpoint /orders/:id/comprobante deprecado. Usa /orders/complete que crea la orden y adjunta comprobante en un solo paso.",
+    deprecated: true,
+    replacement: "POST /orders/complete",
+  });
 });
 
 // Lista de métodos de pago públicos (activos)
@@ -906,6 +849,25 @@ publicRouter.post('/orders/complete', upload.single('file'), async (req: Request
     await (prisma as any).verificaciones_correo.update({ where: { id: parsed.verification_id }, data: { usado: true } });
 
     res.json({ cliente, orden });
+    // Correo orden recibida (upload comprobante)
+    try {
+      if (cliente?.correo_electronico) {
+        const { sendMail } = await import('../utils/mailer');
+        const { correoOrdenRecibida } = await import('../emails/templates');
+        const sorteoNombre = sorteo?.nombre || '';
+        const html = correoOrdenRecibida({
+          clienteNombre: cliente.nombres || '',
+          codigo,
+          sorteoNombre,
+          cantidad,
+          monto: `$${monto_total.toFixed(2)}`,
+          metodoPago: metodoPago?.nombre || undefined,
+          logoUrl: process.env.BRAND_LOGO_URL || null,
+          year: new Date().getFullYear()
+        });
+        await sendMail({ to: cliente.correo_electronico, subject: `Orden recibida ${codigo}`, html });
+      }
+    } catch (e) { console.error('Error correo orden recibida upload:', e); }
   } catch (e) {
     next(e);
   }

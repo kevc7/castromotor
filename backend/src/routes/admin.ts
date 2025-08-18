@@ -8,6 +8,7 @@ import jwt from 'jsonwebtoken';
 import path from 'node:path';
 import fs from 'node:fs';
 import multer from 'multer';
+// Social posts: CRUD simple
 
 export const adminRouter = Router();
 
@@ -150,6 +151,63 @@ adminRouter.get('/stats', requireAuth, async (_req, res, next) => {
     next(e);
   }
 });
+
+// =========================
+//  Social posts (Facebook / Instagram)
+// =========================
+const socialPostSchema = z.object({
+  platform: z.enum(['facebook', 'instagram']),
+  url: z.string().url(),
+  orden: z.number().int().optional(),
+  activo: z.boolean().optional()
+});
+
+// Listar todos
+adminRouter.get('/social-posts', requireAuth, async (_req, res, next) => {
+  try {
+    const posts = await (prisma as any).social_posts.findMany({ orderBy: [{ orden: 'asc' }, { id: 'asc' }] });
+    res.json({ posts });
+  } catch (e) { next(e); }
+});
+
+// Crear
+adminRouter.post('/social-posts', requireAuth, async (req, res, next) => {
+  try {
+    const body = socialPostSchema.parse(req.body);
+    const maxOrden = await (prisma as any).social_posts.aggregate({ _max: { orden: true } });
+    const orden = body.orden ?? (Number(maxOrden?._max?.orden ?? 0) + 1);
+    const created = await (prisma as any).social_posts.create({ data: { platform: body.platform, url: body.url, orden, activo: body.activo ?? true } });
+    res.json({ post: created });
+  } catch (e) { next(e); }
+});
+
+// Actualizar (parcial)
+adminRouter.patch('/social-posts/:id', requireAuth, async (req, res, next) => {
+  try {
+    const params = z.object({ id: z.string() }).parse(req.params);
+    const partial = socialPostSchema.partial().parse(req.body);
+    const updated = await (prisma as any).social_posts.update({ where: { id: BigInt(params.id) }, data: partial });
+    res.json({ post: updated });
+  } catch (e) { next(e); }
+});
+
+// Reordenar (batch) [{id, orden}]
+adminRouter.post('/social-posts/reordenar', requireAuth, async (req, res, next) => {
+  try {
+    const arr = z.array(z.object({ id: z.coerce.bigint(), orden: z.number().int() })).parse(req.body);
+    await prisma.$transaction(arr.map(a => (prisma as any).social_posts.update({ where: { id: a.id }, data: { orden: a.orden } })));
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// Eliminar
+adminRouter.delete('/social-posts/:id', requireAuth, async (req, res, next) => {
+  try {
+    const params = z.object({ id: z.string() }).parse(req.params);
+    await (prisma as any).social_posts.delete({ where: { id: BigInt(params.id) } });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
 // Seed métodos de pago básicos (idempotente)
 adminRouter.post('/metodos_pago/seed', requireAuth, async (_req, res, next) => {
   try {
@@ -285,7 +343,9 @@ adminRouter.get('/numeros_vendidos', requireAuth, async (req: Request, res: Resp
              c.nombres AS cliente_nombres,
              c.apellidos AS cliente_apellidos,
              c.correo_electronico AS cliente_correo,
-             c.telefono AS cliente_telefono
+             c.telefono AS cliente_telefono,
+             c.cedula AS cliente_cedula,
+             c.direccion AS cliente_direccion
       FROM numeros_sorteo ns
       JOIN sorteos s ON s.id = ns.sorteo_id
       LEFT JOIN ordenes_items oi ON oi.numero_sorteo_id = ns.id
@@ -447,12 +507,14 @@ adminRouter.get("/sorteos/:id/estado", requireAuth, async (req, res, next) => {
 // Listar órdenes (por estado) con detalles de cliente y sorteo
 adminRouter.get("/orders", requireAuth, async (req, res, next) => {
   try {
-    const estado = (req.query.estado as string) || "pendiente";
+    const estadoParam = ((req.query.estado as string) || '').trim().toLowerCase();
+    const all = !estadoParam || estadoParam === 'all' || estadoParam === 'todos';
+    const where: any = all ? {} : { estado_pago: estadoParam };
     const ordenes = await prisma.ordenes.findMany({
-      where: { estado_pago: estado },
-      orderBy: { fecha_creacion: "desc" },
+      where,
+      orderBy: { fecha_creacion: 'desc' },
       include: { cliente: true, sorteo: true, metodo_pago_ref: true },
-    } as any);
+    });
     res.json({ ordenes });
   } catch (e) {
     next(e);
@@ -565,7 +627,7 @@ adminRouter.post("/orders/:id/approve", requireAuth, async (req, res, next) => {
       const path = await import('node:path');
       const PDFDocument = (await import('pdfkit')).default;
 
-      if (aprobada?.cliente?.correo_electronico && aprobada?.items) {
+  if (aprobada?.cliente?.correo_electronico && aprobada?.items) {
         const itemIds = (aprobada.items as any[]).map((i: any) => i.numero_sorteo_id as bigint);
         const numeros = itemIds.length
           ? await prisma.numeros_sorteo.findMany({
@@ -610,15 +672,75 @@ adminRouter.post("/orders/:id/approve", requireAuth, async (req, res, next) => {
           console.error('No se pudo crear la factura (se enviará el correo igualmente):', ferr);
         }
 
+        const { correoAprobacion, correoGanador } = await import('../emails/templates');
+        const htmlAprobacion = correoAprobacion({
+          clienteNombre: aprobada.cliente.nombres || '',
+          codigo: aprobada.codigo,
+          sorteoNombre: aprobada.sorteo?.nombre,
+          numeros: (aprobada.items as any[]).map(i => `#${numeroMap.get(String(i.numero_sorteo_id)) ?? String(i.numero_sorteo_id)}`),
+          metodoPago: aprobada?.metodo_pago_ref?.nombre ?? aprobada?.metodo_pago ?? '',
+          monto: aprobada.monto_total ? `$${aprobada.monto_total}` : undefined,
+          logoUrl: process.env.BRAND_LOGO_URL || null,
+          year: new Date().getFullYear()
+        });
         await sendMail({
           to: aprobada.cliente.correo_electronico,
-          subject: `Orden ${aprobada?.codigo} aprobada` ,
-          html: `<p>Hola ${aprobada.cliente.nombres},</p>
-                 <p>Tu orden <strong>${aprobada?.codigo}</strong> ha sido aprobada.</p>
-                 <p>Método de pago: ${aprobada?.metodo_pago_ref?.nombre ?? aprobada?.metodo_pago ?? ''}</p>
-                 <p>Números asignados: ${lista}</p>`,
+          subject: `Orden ${aprobada?.codigo} aprobada`,
+          html: htmlAprobacion,
           attachments: [{ filename: `${aprobada.codigo}.pdf`, path: pdfPath }]
         });
+
+        // -----------------------------------------------------------
+        // Notificación de premios ganados (si alguno de los números asignados
+        // coincide con un número premiado ya definido en la tabla premios)
+        // -----------------------------------------------------------
+        try {
+          const itemIdsBigInt = itemIds.map(id => BigInt(String(id)));
+          if (itemIdsBigInt.length) {
+            const premiosGanados: any[] = await (prisma as any).premios.findMany({
+              where: { numero_sorteo_id: { in: itemIdsBigInt } },
+              include: { numero_sorteo: true, sorteo: true }
+            });
+            if (premiosGanados.length && aprobada?.cliente?.correo_electronico) {
+              const rowsHtml = premiosGanados.map(p => `<li><strong>${p.descripcion}</strong> — Número: #${p.numero_sorteo?.numero_texto ?? ''} (Sorteo: ${p.sorteo?.nombre ?? ''})</li>`).join('');
+              const premiosData = premiosGanados.map(p => ({ numero: p.numero_sorteo?.numero_texto || '', premio: p.descripcion || 'Premio' }));
+              const htmlGanador = correoGanador({
+                clienteNombre: aprobada.cliente.nombres || '',
+                codigo: aprobada.codigo,
+                sorteoNombre: aprobada.sorteo?.nombre,
+                premios: premiosData,
+                linkSorteo: process.env.PUBLIC_BASE_URL ? `${process.env.PUBLIC_BASE_URL}/sorteos/${aprobada.sorteo?.id}` : undefined,
+                logoUrl: process.env.BRAND_LOGO_URL || null,
+                year: new Date().getFullYear()
+              });
+              await sendMail({
+                to: aprobada.cliente.correo_electronico,
+                subject: `🎉 ¡Has ganado ${premiosGanados.length > 1 ? 'premios' : 'un premio'} en ${aprobada.sorteo?.nombre || 'un sorteo'}!`,
+                html: htmlGanador
+              });
+
+              // Notificación a administradores
+              try {
+                const adminMails = await (prisma as any).usuarios.findMany({ where: { rol: { in: ['admin','superadmin','root'] } } });
+                const toAdmins = adminMails.map((u: any) => u.correo_electronico).filter(Boolean).join(',');
+                const htmlAdmin = `<p>Se ha aprobado la orden <strong>${aprobada.codigo}</strong> y contiene número(s) ganador(es).</p>
+                  <p>Cliente: ${aprobada.cliente.nombres} (${aprobada.cliente.correo_electronico})</p>
+                  <ul>${rowsHtml}</ul>`;
+                if (toAdmins) {
+                  await sendMail({
+                    to: toAdmins,
+                    subject: `🔔 Cliente ganador en ${aprobada.sorteo?.nombre || 'sorteo'}`,
+                    html: htmlAdmin
+                  });
+                }
+              } catch (admErr) {
+                console.error('No se pudo notificar administradores de premio ganado:', admErr);
+              }
+            }
+          }
+        } catch (premioErr) {
+          console.error('Error evaluando premios ganados:', premioErr);
+        }
       }
     } catch (mailErr) {
       console.error('Error enviando correo de aprobación:', mailErr);
@@ -642,12 +764,19 @@ adminRouter.post("/orders/:id/reject", requireAuth, async (req, res, next) => {
       const { sendMail } = await import('../utils/mailer');
       const cliente = await prisma.clientes.findUnique({ where: { id: orden.cliente_id as any } });
       if (cliente?.correo_electronico) {
+        const { correoRechazo } = await import('../emails/templates');
+        const htmlRechazo = correoRechazo({
+          clienteNombre: cliente.nombres || '',
+          codigo: orden.codigo,
+          sorteoNombre: '',
+          motivo: (req as any).body?.motivo || 'No cumple validación',
+          logoUrl: process.env.BRAND_LOGO_URL || null,
+          year: new Date().getFullYear()
+        });
         await sendMail({
           to: cliente.correo_electronico,
           subject: `Orden ${orden.codigo} rechazada`,
-          html: `<p>Hola ${cliente.nombres},</p>
-                 <p>Tu orden <strong>${orden.codigo}</strong> fue rechazada.</p>
-                 <p>Motivo: ${(req as any).body?.motivo || 'No cumple validación'}</p>`
+          html: htmlRechazo
         });
       }
     } catch {}

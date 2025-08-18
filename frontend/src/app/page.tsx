@@ -38,13 +38,14 @@ function SmallCarousel({ images }: { images: any[] }) {
   if (!images || images.length === 0) return null;
   
   return (
-    <div className="relative w-full h-96 rounded-lg overflow-hidden mb-4 group">
+    <div className="relative w-full h-[26rem] rounded-xl overflow-hidden mb-5 group bg-black/30">
       {current && (
         <img
           src={getImageUrl(current.url)}
           alt={current.alt || "Sorteo"}
-          className="w-full h-full object-cover transition-transform duration-700 ease-out"
+          className="w-full h-full object-cover object-center transition-transform duration-[1600ms] ease-out group-hover:scale-[1.04]"
           loading="lazy"
+          style={{imageRendering:'auto'}}
         />
       )}
       {images.length > 1 && (
@@ -105,22 +106,27 @@ export default function HomePage() {
   const [paquetes, setPaquetes] = useState<any[]>([]);
   const [ganadores, setGanadores] = useState<any[]>([]);
   const [sorteosImagenes, setSorteosImagenes] = useState<{[key: string]: any[]}>({});
+  const [socialPosts, setSocialPosts] = useState<any[]>([]);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
-        const [sRes, pRes, gRes] = await Promise.all([
+  const [sRes, pRes, gRes, spRes] = await Promise.all([
           fetch(`${API_BASE}/api/sorteos`),
           fetch(`${API_BASE}/api/paquetes_publicados`),
-          fetch(`${API_BASE}/api/sorteos_con_ganadores`)
+          fetch(`${API_BASE}/api/sorteos_con_ganadores`),
+          fetch(`${API_BASE}/api/social_posts`)
         ]);
         const sData = await sRes.json();
         const pData = await pRes.json();
         const gData = await gRes.json();
+        const spData = await spRes.json();
         setSorteos(sData.sorteos || []);
         setPaquetes(pData.paquetes || []);
         setGanadores(gData.sorteos || []);
+  console.log('DEBUG social_posts response', spData);
+  setSocialPosts(spData.posts || []);
         
         // Cargar imágenes para cada sorteo
         const imagenesMap: {[key: string]: any[]} = {};
@@ -219,6 +225,68 @@ export default function HomePage() {
     }
   }, [ganadores]);
 
+  // Carrusel social: muestra 3 por vista (o menos si no hay suficientes) y autoplay ligero
+  const SocialSection = () => {
+    const [idx, setIdx] = useState(0);
+    const total = socialPosts.length;
+    useEffect(() => {
+      if (total <= 3) return; // no auto-rotar si <=3
+      const t = setInterval(() => {
+        setIdx(i => (i + 3) % total);
+      }, 8000);
+      return () => clearInterval(t);
+    }, [total]);
+    if (!total) {
+      return (
+        <section className="max-w-6xl mx-auto px-6 pb-24 reveal-up" id="social">
+          <h2 className="text-2xl font-bold mb-6 section-title">Publicaciones</h2>
+          <div className="text-sm text-slate-400">No hay publicaciones activas aún.</div>
+        </section>
+      );
+    }
+    let visibles: any[];
+    if (total <= 3) {
+      visibles = socialPosts; // mostrar tal cual sin duplicar
+    } else {
+      const base = socialPosts.slice(idx, idx + 3);
+      const wrap = (idx + 3) > total ? socialPosts.slice(0, (idx + 3) - total) : [];
+      visibles = base.concat(wrap);
+    }
+    return (
+      <section className="max-w-6xl mx-auto px-6 pb-24 reveal-up" id="social">
+        <h2 className="text-2xl font-bold mb-6 section-title">Publicaciones</h2>
+        <div className="relative">
+          <div className="flex gap-6 overflow-hidden">
+            {visibles.map((p:any) => {
+              const key = `${p.id}-${idx}`;
+              const common = 'flex-shrink-0 basis-full sm:basis-1/2 lg:basis-1/3 rounded-xl border border-white/10 bg-white/5 p-3 backdrop-blur-sm';
+              if (p.platform === 'facebook') {
+                const FacebookPost = require('../components/social/FacebookPost').FacebookPost;
+                return <div key={key} className={common}><FacebookPost url={p.url} /></div>;
+              }
+              if (p.platform === 'instagram') {
+                const InstagramPost = require('../components/social/InstagramPost').InstagramPost;
+                return <div key={key} className={common}><InstagramPost url={p.url} /></div>;
+              }
+              return null;
+            })}
+          </div>
+          {total > 3 && (
+            <div className="flex justify-between mt-6">
+              <button onClick={() => setIdx(i => (i - 3 + total) % total)} className="px-3 py-2 rounded-md bg-white/10 hover:bg-white/20 text-sm">Anterior</button>
+              <div className="flex gap-1 items-center">
+                {Array.from({ length: Math.ceil(total / 3) }).map((_, i) => (
+                  <button key={i} onClick={() => setIdx((i*3)%total)} className={`h-2.5 w-2.5 rounded-full ${Math.floor(idx/3)===i ? 'bg-rose-500' : 'bg-white/20 hover:bg-white/40'} transition`} />
+                ))}
+              </div>
+              <button onClick={() => setIdx(i => (i + 3) % total)} className="px-3 py-2 rounded-md bg-white/10 hover:bg-white/20 text-sm">Siguiente</button>
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  };
+
   return (
     <main className="min-h-screen bg-[#0f1725] text-white">
       {/* Navbar fijo siempre arriba */}
@@ -235,41 +303,28 @@ export default function HomePage() {
       <section className="relative overflow-hidden pt-28 sm:pt-32">
         <div className="absolute inset-0 bg-gradient-to-b from-[#0f1725] via-[#111827] to-[#0f1725]" />
         <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-14 sm:pt-16 pb-10 sm:pb-12 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 items-center">
-          <div className="reveal-up">
-            <h1 className="text-4xl md:text-5xl font-extrabold leading-tight">
-              ¡Compra tus tickets ahora!<br />
-              <span className="text-rose-500">Promos por tiempo limitado</span>
+          <div className="reveal-up fade-stagger">
+            <h1 className="text-4xl md:text-5xl font-extrabold leading-tight animate-title">
+              ¡Compra tus <span className="glow-pulse">tickets</span> ahora!<br />
+              <span className="text-rose-500 glow-pulse">Promos por tiempo limitado</span>
             </h1>
-            <p className="mt-4 text-slate-300">Elige tu sorteo favorito, compra tickets o ahorra con paquetes especiales. ¡Las cantidades vuelan!</p>
-            <div className="mt-6 flex gap-3">
-              <Link href="#sorteos-premiados" className="px-5 py-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white">Comprar tickets</Link>
+            <p className="mt-4 text-slate-300 fade-in-up">Elige tu sorteo favorito, compra tickets o ahorra con paquetes especiales. ¡Las cantidades vuelan!</p>
+            <div className="mt-6 flex gap-3 fade-in-up">
+              <Link href="#sorteos-premiados" className="px-5 py-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white btn-intro hover-wiggle relative overflow-hidden">
+                <span className="absolute inset-0 bg-[linear-gradient(110deg,rgba(255,255,255,0.15),rgba(255,255,255,0))] opacity-0 hover:opacity-100 transition-opacity" />
+                Comprar tickets
+              </Link>
             </div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-6 reveal-up">
-            <h3 className="text-lg font-semibold mb-4">Paquetes destacados</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" id="paquetes">
-              {destacados.map((p) => {
-                const original = Number(p.sorteo?.precio_por_numero || 0) * Number(p.cantidad_numeros || 0);
-                const final = Number(p.precio_total || 0);
-                return (
-                  <div key={String(p.id)} className="rounded-xl bg-black/30 border border-white/10 p-4 h-full flex flex-col card-prom">
-                    <div className="space-y-1">
-                      <div className="text-[11px] uppercase tracking-wide text-slate-400 truncate">{p.sorteo?.nombre}</div>
-                      <div className="text-sm text-slate-200 font-medium break-words">{p.nombre || `${p.cantidad_numeros} tickets`}</div>
-                      <div className="text-xs font-semibold text-emerald-400">Incluye {Number(p.cantidad_numeros || 0)} tickets</div>
-                    </div>
-                    <div className="mt-3">
-                      <div className="flex items-center gap-2">
-                        <div className="text-rose-400 text-xl font-bold">${final.toFixed(2)}</div>
-                        <span className="badge-save">Ahorra {p.descuento}%</span>
-                      </div>
-                      <div className="text-xs text-slate-400 line-through">${original.toFixed(2)}</div>
-                    </div>
-                    <Link href={`/sorteos/${p.sorteo_id}?paqueteId=${p.id}`} className="mt-3 inline-flex w-full justify-center px-3 py-2 btn-cta text-sm">Comprar</Link>
-                  </div>
-                );
-              })}
-              {destacados.length === 0 && <div className="text-sm text-slate-400">Pronto más paquetes…</div>}
+          <div className="reveal-up flex items-center justify-center">
+            <div className="relative w-full h-full max-h-[480px] rounded-2xl overflow-hidden border border-white/10 shadow-xl group">
+              <img
+                src="/principal.png"
+                alt="Promoción principal"
+                className="w-full h-full object-cover object-center transition-transform duration-[2500ms] group-hover:scale-105"
+                loading="eager"
+              />
+              <div className="absolute inset-0 bg-gradient-to-tr from-black/40 via-black/10 to-transparent pointer-events-none" />
             </div>
           </div>
         </div>
@@ -302,11 +357,13 @@ export default function HomePage() {
         </section>
       )}
 
+  {/* Social posts (se moverá debajo del tutorial) */}
+
       {/* Navbar simple (removido - tenemos navbar fijo arriba) */}
 
       {/* Sección: sorteos y números premiados (uno debajo del otro y a ancho completo) */}
       <section id="sorteos-premiados" className="max-w-6xl mx-auto px-6 pb-20">
-        <h2 className="text-2xl font-bold mb-4 reveal-up">Sorteos y números premiados</h2>
+  <h2 className="text-2xl font-bold mb-4 reveal-up section-title">Sorteos y números premiados</h2>
         <div className="space-y-6">
           {ganadores.map((s) => {
             const vendidosPct = s?.conteos?.total ? (s.conteos.vendidos / s.conteos.total) * 100 : 0;
@@ -318,17 +375,22 @@ export default function HomePage() {
                 
                 <div className="mb-3">
                   <div className="text-xl font-semibold mb-2">{s.nombre}</div>
-                  <div className="relative">
-                    <div className="h-4 w-full rounded-full bg-slate-700/40 overflow-hidden shadow-inner">
-                      <div 
-                        className="h-full bg-gradient-to-r from-rose-500 via-rose-400 to-rose-300 transition-all duration-1000 ease-out shadow-lg" 
-                        style={{ width: `${vendidosPct}%` }}
-                      />
-                    </div>
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-xs font-semibold text-white drop-shadow-lg">
-                        {Math.round(vendidosPct)}% completado
-                      </span>
+                  <div className="relative progress-container-animated">
+                    <div className="progress-bar-track">
+                      {(() => {
+                        const pct = vendidosPct;
+                        let gradient = 'linear-gradient(90deg,#dc2626,#f87171,#fb923c)';
+                        if (pct >= 25) gradient = 'linear-gradient(90deg,#f59e0b,#fbbf24,#fb923c)';
+                        if (pct >= 55) gradient = 'linear-gradient(90deg,#10b981,#34d399,#10b981)';
+                        if (pct >= 90) gradient = 'linear-gradient(90deg,#6366f1,#8b5cf6,#ec4899)';
+                        return (
+                          <div
+                            className="progress-bar-fill progress-illusion transition-[width] duration-[1400ms] ease-out"
+                            style={{ width: `${pct}%`, background: gradient }}
+                          />
+                        );
+                      })()}
+                      <span className="progress-badge">{Math.round(vendidosPct)}% completado</span>
                     </div>
                   </div>
                 </div>
@@ -339,8 +401,8 @@ export default function HomePage() {
                         PREMIO: {p.descripcion}
                       </div>
                       <div className={`text-lg font-bold ${p.vendido ? 'line-through text-slate-400' : 'text-white'}`}>#{p.numero_texto}</div>
-                      {p.vendido && p.cliente && (
-                        <div className="text-xs text-emerald-400">Ganador: {p.cliente.nombres} {p.cliente.apellidos}</div>
+                      {p.vendido && (
+                        <div className="text-xs text-emerald-400">Reclamado</div>
                       )}
                     </div>
                   ))}
@@ -356,7 +418,7 @@ export default function HomePage() {
 
       {/* Ganadores (lista aplanada) */}
       <section id="ganadores" className="max-w-6xl mx-auto px-6 pb-24">
-        <h2 className="text-2xl font-bold mb-4 reveal-up">Ganadores</h2>
+  <h2 className="text-2xl font-bold mb-4 reveal-up section-title">Ganadores</h2>
         {winners.length === 0 ? (
           <div className="text-sm text-slate-400 reveal-up">Aún no hay ganadores registrados.</div>
         ) : (
@@ -372,6 +434,52 @@ export default function HomePage() {
           </div>
         )}
       </section>
+
+      {/* Tutorial de compra + Video */}
+      <section id="como-comprar" className="max-w-6xl mx-auto px-6 pb-24 reveal-up">
+        <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-black/40 via-black/30 to-black/40 p-6 md:p-8 shadow-lg relative overflow-hidden">
+          <div className="absolute inset-0 pointer-events-none opacity-40 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.25),transparent_65%)]" />
+          <h2 className="text-2xl font-bold mb-4 section-title">¿Cómo comprar?</h2>
+          <ol className="list-decimal list-inside space-y-2 text-sm text-slate-300">
+            <li>Elige el sorteo que deseas ver. Elige cuántos números (tickets) deseas (¡O selecciona un paquete promocional que ya trae varios números con descuento!).</li>
+            <li>Haz clic en el botón de compra para ir al formulario del sorteo.</li>
+            <li>Completa tus datos personales y escribe tu correo correctamente y número de teléfono CORRECTAMENTE (Te contactaremos por esos medios).</li>
+            <li>Pide tu código de verificación; revisa tu correo e ingresa los 3 dígitos para validarlo.</li>
+            <li>Selecciona un método de pago. Si es transferencia/deposito sube la imagen de tu comprobante de transferencia o deposito. Si es Payphone puedes pagar en línea.</li>
+            <li>Confirma la compra. Recibirás un correo cuando un administrador apruebe tu pago, o en caso de pagar con payphone se te otorga tus numeros automaticamente hayas hecho la compra.</li>
+            <li>Tus números quedarán registrados y te llegarán a tu correo electrónico ingresado; si el sorteo alcanza su meta se realizará con los numeros de la loteria nacional y se publicarán los ganadores.</li>
+          </ol>
+          <div className="mt-8">
+            {(() => {
+              const tutorialLink = process.env.NEXT_PUBLIC_VIDEO_TUTORIAL_URL || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'; // Reemplazar por el link real
+              return (
+                <a
+                  href={tutorialLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ring-pulse group relative inline-flex items-center gap-3 px-8 py-4 rounded-md font-extrabold tracking-wide text-white text-sm md:text-base overflow-hidden focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#0f1725] focus:ring-blue-500 btn-intro"
+                  style={{
+                    background: 'linear-gradient(90deg,#0047ff,#0a84ff)',
+                    boxShadow: '0 0 0 0 rgba(0,119,255,0.6)'
+                  }}
+                >
+                  <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity bg-[linear-gradient(90deg,rgba(255,255,255,0.15),rgba(255,255,255,0))]" />
+                  <span className="relative flex items-center gap-3">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/30 group-hover:scale-110 transition-transform">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+                    </span>
+                    <span className="text-base">VIDEO TUTORIAL DE COMPRA</span>
+                  </span>
+                  <span className="absolute -inset-8 animate-pulse rounded-full bg-blue-500/20 blur-xl" />
+                </a>
+              );
+            })()}
+          </div>
+        </div>
+      </section>
+
+  {/* Social posts debajo del tutorial */}
+  <SocialSection />
 
       {/* Footer */}
       <footer className="bg-black/20 border-t border-white/10 mt-20">

@@ -80,6 +80,28 @@ export default function SorteoPage() {
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const [remaining, setRemaining] = useState<number>(0);
   const [payOpening, setPayOpening] = useState<boolean>(false);
+  const [errors, setErrors] = useState<Record<string,string>>({});
+  // Modal de éxito de orden
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [orderData, setOrderData] = useState<any>(null);
+
+  // Validaciones ligeras (solo UI) — NO cambian nombres de campos
+  // Regex corregido (antes estaba doble escapado y fallaba con correos válidos)
+  const emailRegex = /^(?!.*\.{2})[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
+  function validate(fields = cliente) {
+    const e: Record<string,string> = {};
+    if (!fields.nombres.trim()) e.nombres = 'Requerido';
+    if (!fields.apellidos.trim()) e.apellidos = 'Requerido';
+    if (!fields.cedula.trim()) e.cedula = 'Requerido';
+    if (!fields.correo_electronico.trim()) e.correo_electronico = 'Ingresa tu correo';
+    else if (!emailRegex.test(fields.correo_electronico.trim())) e.correo_electronico = 'Formato de correo inválido';
+    if (!fields.telefono.trim()) e.telefono = 'Requerido';
+    if (!fields.direccion.trim()) e.direccion = 'Requerido';
+    setErrors(e);
+    return e;
+  }
+
+  useEffect(() => { validate(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [cliente.correo_electronico, cliente.nombres, cliente.apellidos, cliente.cedula, cliente.telefono, cliente.direccion]);
 
   useEffect(() => {
     (async () => {
@@ -125,6 +147,8 @@ export default function SorteoPage() {
     try {
       setMsg(null);
       setMsgType(null);
+  const currentErrors = validate();
+  if (Object.keys(currentErrors).length) throw new Error('Corrige los campos marcados antes de continuar');
       // Validación rápida en cliente contra disponibles
       const solicitados = paqueteSeleccionado ? Number(paqueteSeleccionado.cantidad_numeros || 0) : Number(cantidad || 0);
       if (conteos && solicitados > Number(conteos.disponibles || 0)) {
@@ -165,12 +189,17 @@ export default function SorteoPage() {
       if (!res.ok) throw new Error(data?.error || 'Error creando la orden');
       setMsg("✅ ¡Tu orden fue generada con éxito! Un administrador la revisará y te llegará un correo con el resultado.");
       setMsgType('success');
-      
-      // Limpiar formulario completamente
-      limpiarFormulario();
-      
-      // Scroll a arriba para ver el mensaje
-      if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+      // Guardar data para modal (solo mostrar campos relevantes si existen)
+      setOrderData({
+        order_id: data?.order_id || data?.id,
+        codigo: data?.codigo || data?.order_code,
+        total: precioConDesc,
+        tickets: paqueteSeleccionado ? Number(paqueteSeleccionado.cantidad_numeros || 0) : Number(cantidad || 0),
+        paquete: paqueteSeleccionado ? paqueteSeleccionado.nombre || `${paqueteSeleccionado.cantidad_numeros} tickets` : null,
+        correo: cliente.correo_electronico
+      });
+      setShowSuccessModal(true);
+      // No limpiar inmediatamente para que el usuario vea el resumen; se limpiará al cerrar el modal
     } catch (e: any) {
       setMsg(e?.message || 'Error creando la orden');
       setMsgType('error');
@@ -205,7 +234,8 @@ export default function SorteoPage() {
       setVerifMsg(null);
       setIsVerified(false);
       setSendingCode(true);
-      if (!cliente.correo_electronico) throw new Error("Ingresa tu correo primero");
+  if (!cliente.correo_electronico) throw new Error("Ingresa tu correo primero");
+  if (errors.correo_electronico) throw new Error(errors.correo_electronico);
       
       const res = await fetch(`${API_BASE}/api/verificaciones/solicitar`, {
         method: 'POST',
@@ -245,6 +275,7 @@ export default function SorteoPage() {
   async function verificarCodigo() {
     try {
       setVerifMsg(null);
+      if (isVerified) return; // ya verificado, evitar doble petición
       setVerifying(true);
       if (!verificationId || verificationCode.length !== 3) throw new Error('Ingresa el código de 3 dígitos');
       const res = await fetch(`${API_BASE}/api/verificaciones/verificar`, {
@@ -278,6 +309,7 @@ export default function SorteoPage() {
   }, [expiresAt]);
 
   return (
+    <>
     <main className="min-h-screen bg-[#0f1725] text-white">
       <div className="px-4 sm:px-6 pt-6 sm:pt-8 pb-6 max-w-5xl mx-auto">
         {loading ? (
@@ -290,6 +322,16 @@ export default function SorteoPage() {
               <div className="mt-3 text-sm text-slate-700">Disponibles: {conteos.disponibles} / {conteos.total}</div>
             )}
 
+            {conteos && Number(conteos.disponibles) === 0 ? (
+              <div className="mt-6 sm:mt-8 p-6 rounded-xl border border-white/10 bg-white/5 text-center">
+                <h2 className="text-xl font-semibold mb-2">Tickets agotados</h2>
+                <p className="text-sm text-slate-300 max-w-md mx-auto">Se han vendido todos los números disponibles para este sorteo. Muy pronto abriremos nuevos sorteos y promociones.</p>
+                <p className="text-sm text-slate-400 max-w-lg mx-auto mt-4 leading-relaxed">Si ya compraste tus tickets para este sorteo, mantente pendiente de esta página y de nuestras redes sociales. El sorteo se jugará con los números oficiales de la lotería y anunciaremos la fecha exacta oportunamente. ¡Gracias por participar y mucha suerte!</p>
+                <div className="mt-5 flex justify-center">
+                  <a href="/" className="px-5 py-2.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium shadow-sm">Ir al inicio</a>
+                </div>
+              </div>
+            ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6 sm:mt-8">
               <section className="p-4 sm:p-5 rounded-xl border border-white/10 bg-white/5 shadow-sm md:col-span-2">
                 <h2 className="text-lg font-semibold mb-3">{paqueteSeleccionado ? 'Compra de promoción' : 'Compra por cantidad'}</h2>
@@ -325,10 +367,26 @@ export default function SorteoPage() {
                     </label>
                     <label className="grid gap-1">
                       <span className="text-xs text-slate-400">Correo</span>
-                      <div className="flex gap-2">
-                        <input required type="email" className="flex-1 border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" value={cliente.correo_electronico} onChange={(e) => setCliente({ ...cliente, correo_electronico: e.target.value })} />
-                        <button type="button" onClick={solicitarCodigo} disabled={sendingCode} className={`px-3 py-2 rounded-md text-white text-sm whitespace-nowrap ${sendingCode ? 'bg-rose-700/60 cursor-not-allowed animate-pulse' : 'bg-rose-600 hover:bg-rose-700'}`}>{sendingCode ? 'Enviando…' : 'Enviar código'}</button>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          required
+                          type="email"
+                          className={`flex-1 border ${errors.correo_electronico ? 'border-rose-500/70 ring-1 ring-rose-500/40' : 'border-white/10'} bg-black/30 rounded-md px-3 py-2 text-white outline-none focus:ring-2 focus:ring-rose-500/50 transition`}
+                          value={cliente.correo_electronico}
+                          onChange={(e) => setCliente({ ...cliente, correo_electronico: e.target.value })}
+                          onBlur={() => validate()}
+                          placeholder="tu@correo.com"
+                        />
+                        <button
+                          type="button"
+                          onClick={solicitarCodigo}
+                          disabled={sendingCode || Boolean(errors.correo_electronico)}
+                          className={`sm:w-auto w-full px-3 py-2 rounded-md text-white text-xs font-medium ${(sendingCode || errors.correo_electronico) ? 'bg-rose-700/60 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-700'} transition`}
+                        >
+                          {sendingCode ? 'Enviando…' : 'Enviar código'}
+                        </button>
                       </div>
+                      {errors.correo_electronico && <span className="text-[11px] text-rose-400">{errors.correo_electronico}</span>}
                       {verifMsg && (
                         <span className={`text-xs ${isVerified ? 'text-emerald-400' : 'text-amber-300'}`}>
                           {verifMsg}
@@ -348,9 +406,26 @@ export default function SorteoPage() {
                     <label className="grid gap-1">
                       <span className="text-xs text-slate-400">Código de verificación</span>
                       <div className="flex gap-2">
-                        <input required maxLength={3} placeholder="___" className="flex-1 border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white tracking-widest" value={verificationCode} onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0,3))} />
-                        <button type="button" onClick={verificarCodigo} disabled={verifying || !verificationId || verificationCode.length !== 3} className={`px-3 py-2 rounded-md text-white text-sm whitespace-nowrap ${verifying ? 'bg-emerald-700/60 cursor-not-allowed animate-pulse' : 'bg-emerald-600 hover:bg-emerald-700'}`}>{verifying ? 'Verificando…' : 'Verificar'}</button>
+                        <input
+                          required
+                          maxLength={3}
+                          placeholder="___"
+                          disabled={isVerified}
+                          readOnly={isVerified}
+                          className={`flex-1 border rounded-md px-3 py-2 tracking-widest transition ${isVerified ? 'border-emerald-500/50 bg-emerald-900/30 text-emerald-300 cursor-not-allowed' : 'border-white/10 bg-black/30 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40'}`}
+                          value={verificationCode}
+                          onChange={(e) => !isVerified && setVerificationCode(e.target.value.replace(/\D/g, '').slice(0,3))}
+                        />
+                        <button
+                          type="button"
+                          onClick={verificarCodigo}
+                          disabled={isVerified || verifying || !verificationId || verificationCode.length !== 3}
+                          className={`px-3 py-2 rounded-md text-white text-sm whitespace-nowrap ${isVerified ? 'bg-emerald-700/60 cursor-not-allowed' : verifying ? 'bg-emerald-700/60 cursor-not-allowed animate-pulse' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+                        >
+                          {isVerified ? 'Verificado' : verifying ? 'Verificando…' : 'Verificar'}
+                        </button>
                       </div>
+                      {isVerified && <span className="text-[11px] text-emerald-400 mt-0.5">Código confirmado. Ya no puedes modificarlo.</span>}
                     </label>
                     <label className="grid gap-1 md:col-span-1">
                       <span className="text-xs text-slate-400">Dirección</span>
@@ -379,14 +454,53 @@ export default function SorteoPage() {
                     ))}
                   </div>
                 </div>
-                <div className="p-3 rounded-lg border border-white/10 bg-white/5">
-                  <div className="text-sm font-medium mb-2 text-white">Comprobante de pago</div>
-                  <input className="text-sm" type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-                     <div className="text-xs text-slate-300 mt-2">Total a pagar: <span className="font-semibold text-white">${precioConDesc.toFixed(2)}</span> {paqueteSeleccionado && <span className="line-through ml-2 text-slate-400">${precioSinDesc.toFixed(2)}</span>}</div>
+                <div className="p-4 rounded-xl border-2 border-dashed border-rose-500/40 bg-gradient-to-br from-black/40 to-black/20 relative group overflow-hidden">
+                  <div className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition duration-500 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.08),transparent_60%)]" />
+                  <div className="text-sm font-semibold mb-3 flex items-center gap-2 text-white">
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-rose-600/80 text-white shadow ring-1 ring-white/10">
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <rect x="3" y="5" width="18" height="14" rx="2" ry="2" />
+                        <circle cx="9" cy="11" r="2.5" />
+                        <path d="M21 15l-4.5-4.5a1 1 0 0 0-1.4 0L9 17" />
+                      </svg>
+                      <span className="sr-only">Imagen</span>
+                    </span>
+                    Comprobante de pago
+                  </div>
+                  <label className="block cursor-pointer">
+                    <span className="sr-only">Subir comprobante</span>
+                    <input
+                      className="hidden"
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={(e) => setFile(e.target.files?.[0] || null)}
+                    />
+                    <div className={`rounded-lg border-2 border-dashed ${file ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-white/15 hover:border-rose-400/60 bg-white/5 hover:bg-white/10'} p-4 text-center transition`}>                        
+                      {file ? (
+                        <div className="text-xs text-emerald-300 break-all">
+                          Archivo seleccionado: <span className="font-medium">{file.name}</span>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-300">
+                          Arrastra y suelta aquí o <span className="text-rose-400 font-medium">haz clic</span> para subir tu comprobante (imagen o PDF)
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                  <div className="mt-4 text-center">
+                    <div className="text-[11px] uppercase tracking-wide text-slate-400 font-medium mb-1">Total a pagar</div>
+                    <div className="text-2xl font-extrabold text-white drop-shadow-sm">${precioConDesc.toFixed(2)}</div>
+                    {paqueteSeleccionado && (
+                      <div className="text-[11px] text-slate-400 mt-1">Precio sin promoción: <span className="line-through">${precioSinDesc.toFixed(2)}</span></div>
+                    )}
+                    <p className="mt-3 text-[11px] leading-relaxed text-slate-300 max-w-xs mx-auto">
+                      Realiza una <span className="text-white font-medium">transferencia o depósito</span> EXACTA por este monto y adjunta el comprobante para validar tu participación.
+                    </p>
+                  </div>
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button onClick={crearOrdenCompleta} disabled={submitting} className={`w-full sm:w-auto px-4 py-2 rounded-md text-white ${submitting ? 'bg-rose-700/60 cursor-not-allowed animate-pulse' : 'bg-rose-600 hover:bg-rose-700'}`}>{submitting ? 'Generando orden…' : 'Confirmar compra'}</button>
+                <button onClick={crearOrdenCompleta} disabled={submitting || Object.keys(errors).length > 0} className={`w-full sm:w-auto px-4 py-2 rounded-md text-white ${(submitting || Object.keys(errors).length > 0) ? 'bg-rose-700/60 cursor-not-allowed animate-pulse' : 'bg-rose-600 hover:bg-rose-700'} transition`}>{submitting ? 'Generando orden…' : 'Confirmar compra'}</button>
                 {metodoPagoId && metodos.find(m => Number(m.id) === Number(metodoPagoId))?.nombre?.toLowerCase().includes('payphone') && (
                   <button
                     onClick={async () => {
@@ -395,6 +509,7 @@ export default function SorteoPage() {
                         const solicitados = paqueteSeleccionado ? Number(paqueteSeleccionado.cantidad_numeros || 0) : Number(cantidad || 0);
                         if (conteos && solicitados > Number(conteos.disponibles || 0)) throw new Error(`Solo quedan ${conteos.disponibles} números disponibles`);
                         if (!cliente.correo_electronico || !cliente.nombres) throw new Error('Completa tus datos básicos (nombres y correo)');
+                        if (errors.correo_electronico) throw new Error(errors.correo_electronico);
                         setPayOpening(true);
                         const r = await fetch(`${API_BASE}/api/payments/payphone/init`, {
                           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -591,10 +706,59 @@ export default function SorteoPage() {
             </div>
               </section>
             </div>
+            )}
           </>
         )}
       </div>
     </main>
+    {showSuccessModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div className="bg-[#0f1725] w-full max-w-md rounded-xl border border-white/10 shadow-lg p-6 relative">
+          <button onClick={() => { setShowSuccessModal(false); limpiarFormulario(); }} className="absolute top-2 right-2 text-slate-400 hover:text-white">✕</button>
+          <h3 className="text-xl font-semibold mb-2 text-emerald-400">Orden generada</h3>
+          <p className="text-sm text-slate-300 mb-4">Hemos recibido tu orden. Un administrador la revisará y recibirás un correo con la confirmación.</p>
+          {orderData && (
+            <div className="text-sm bg-black/50 rounded-lg border border-white/10 p-4 space-y-2">
+              {orderData.order_id && (
+                <div className="flex items-start gap-2">
+                  <span className="text-slate-400 min-w-[90px]">ID Orden:</span>
+                  <span className="font-semibold text-white tracking-wide">{orderData.order_id}</span>
+                </div>
+              )}
+              {orderData.codigo && (
+                <div className="flex items-start gap-2">
+                  <span className="text-slate-400 min-w-[90px]">Código:</span>
+                  <span className="font-medium text-emerald-300 bg-emerald-600/10 px-2 py-0.5 rounded border border-emerald-500/30 select-all">{orderData.codigo}</span>
+                </div>
+              )}
+              <div className="flex items-start gap-2">
+                <span className="text-slate-400 min-w-[90px]">Tickets:</span>
+                <span className="font-semibold text-white">{orderData.tickets}</span>
+              </div>
+              {orderData.paquete && (
+                <div className="flex items-start gap-2">
+                  <span className="text-slate-400 min-w-[90px]">Paquete:</span>
+                  <span className="text-white/90">{orderData.paquete}</span>
+                </div>
+              )}
+              <div className="flex items-start gap-2">
+                <span className="text-slate-400 min-w-[90px]">Total:</span>
+                <span className="font-bold text-white">${orderData.total?.toFixed ? orderData.total.toFixed(2) : orderData.total}</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-slate-400 min-w-[90px]">Correo:</span>
+                <a href={`mailto:${orderData.correo}`} className="text-sky-300 hover:text-sky-200 underline break-all select-all">{orderData.correo}</a>
+              </div>
+            </div>
+          )}
+          <div className="mt-5 flex flex-col sm:flex-row gap-3">
+            <button onClick={() => { setShowSuccessModal(false); limpiarFormulario(); }} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md px-4 py-2">Nueva compra</button>
+            <a href="/" className="flex-1 text-center bg-white/10 hover:bg-white/20 text-white rounded-md px-4 py-2">Ir al inicio</a>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

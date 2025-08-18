@@ -25,6 +25,23 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* ===================== */
+/*  Custom Cursor Icons  */
+/* ===================== */
+/* Default cursor across the site */
+html, body {
+  cursor: url('/cursor-flame.png') 0 0, auto;
+}
+/* Clickable / interactive elements use selection cursor */
+a, button, [role="button"], input[type="button"], input[type="submit"], input[type="file"], label, select, summary,
+.cursor-pointer, .btn, .btn-cta, .btn-intro {
+  cursor: url('/cursor-selection.png') 0 0, pointer !important;
+}
+/* Fallback for disabled to show not-allowed but keep custom pointer feel off */
+button:disabled, [aria-disabled="true"], .disabled {
+  cursor: not-allowed !important;
+}
+
 /* Animación de flotación suave para el logo */
 @keyframes float {
   0%, 100% { transform: translateY(0px); filter: drop-shadow(0 2px 8px rgba(255,255,255,0.1)); }
@@ -85,3 +102,123 @@ body {
   animation: gradient-shift 4s ease-in-out infinite;
   font-weight: 500;
 }
+
+/* Hero / títulos llamativos */
+@keyframes title-pop {
+  0% { opacity: 0; transform: translateY(22px) scale(.94); filter: blur(4px); }
+  55% { opacity: 1; transform: translateY(0) scale(1.015); filter: blur(0); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-title { animation: title-pop 900ms cubic-bezier(.16,.8,.34,1) both; }
+
+/* Sub fade-in */
+@keyframes soft-fade-up { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+.fade-in-up { opacity:0; animation: soft-fade-up .8s ease .25s forwards; }
+
+/* Stagger container: aplica a hijos directos */
+.fade-stagger > * { opacity:0; transform: translateY(10px); animation: soft-fade-up .7s ease forwards; }
+.fade-stagger > *:nth-child(1){ animation-delay:.05s; }
+.fade-stagger > *:nth-child(2){ animation-delay:.15s; }
+.fade-stagger > *:nth-child(3){ animation-delay:.25s; }
+.fade-stagger > *:nth-child(4){ animation-delay:.35s; }
+.fade-stagger > *:nth-child(5){ animation-delay:.45s; }
+.fade-stagger > *:nth-child(6){ animation-delay:.55s; }
+.fade-stagger > *:nth-child(7){ animation-delay:.65s; }
+
+/* Subrayado dinámico para títulos de sección */
+@keyframes underline-grow { from { width:0; } to { width:100%; } }
+.section-title { position:relative; display:inline-block; padding-bottom:6px; }
+.section-title:after { content:""; position:absolute; left:0; bottom:0; height:3px; width:0; background:linear-gradient(90deg,#f31260,#fb923c); border-radius:4px; animation: underline-grow 1s cubic-bezier(.6,.2,.2,1) .2s forwards; box-shadow:0 0 8px #f3126088; }
+
+/* Pulso sutil para resaltar palabras clave */
+@keyframes glow-pulse { 0%,100% { text-shadow:0 0 0 rgba(255,255,255,0); } 50% { text-shadow:0 0 14px rgba(255,255,255,.35); } }
+.glow-pulse { animation: glow-pulse 3.2s ease-in-out infinite; }
+
+/* Hover wiggle para CTAs secundarios */
+@keyframes wiggle {
+  0%,100% { transform:translateY(0); }
+  50% { transform:translateY(-2px); }
+}
+.hover-wiggle:hover { animation: wiggle .6s ease; }
+
+/* Botón video con halo animado mejorado */
+@keyframes ring-ping { 0% { transform:scale(.6); opacity:.65; } 70% { transform:scale(1.25); opacity:0; } 100% { transform:scale(1.25); opacity:0; } }
+.ring-pulse:before, .ring-pulse:after { content:""; position:absolute; inset:0; border-radius:inherit; background:radial-gradient(circle at 30% 30%,rgba(255,255,255,.5),rgba(255,255,255,0)); opacity:.25; }
+.ring-pulse:after { animation: ring-ping 2.4s ease-out infinite; mix-blend-mode:screen; }
+
+/* Efecto shine para botones cuando aparecen */
+@keyframes btn-intro { from { opacity:0; transform:translateY(10px) scale(.96); } to { opacity:1; transform:translateY(0) scale(1); } }
+.btn-intro { animation: btn-intro .7s cubic-bezier(.25,.6,.3,1) .4s both; }
+
+/* Destacar mejores paquetes */
+@keyframes glow-border {
+  0%,100% { box-shadow:0 0 0 0 rgba(243,18,96,0.35),0 0 0 0 rgba(16,185,129,0.15); }
+  50% { box-shadow:0 0 16px 2px rgba(243,18,96,0.55),0 0 28px 4px rgba(16,185,129,0.25); }
+}
+.pkg-top1 { position:relative; background:linear-gradient(145deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03)); border:1.5px solid rgba(243,18,96,0.55)!important; animation:glow-border 3.2s ease-in-out infinite; }
+.pkg-top2 { position:relative; background:linear-gradient(145deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02)); border:1.5px solid rgba(16,185,129,0.45)!important; }
+.badge-rank { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:600; padding:3px 8px; border-radius:9999px; letter-spacing:.5px; text-transform:uppercase; background:linear-gradient(90deg,#f31260,#fb923c); color:#fff; box-shadow:0 0 0 1px rgba(255,255,255,0.08); }
+.badge-rank.secondary { background:linear-gradient(90deg,#059669,#10b981); }
+.badge-rank svg { width:12px; height:12px; }
+
+/* ========================= */
+/*  Progress Bar (Sorteos)   */
+/* ========================= */
+@keyframes progress-shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+@keyframes progress-pulse-glow {
+  0%,100% { box-shadow: 0 0 0 0 rgba(244,63,94,0.35),0 0 0 0 rgba(255,255,255,0.08); }
+  50% { box-shadow: 0 0 18px 4px rgba(244,63,94,0.55),0 0 28px 6px rgba(255,255,255,0.12); }
+}
+.progress-bar-track {
+  position: relative;
+  width: 100%;
+  height: 1.1rem; /* ~5-10% bigger */
+  border-radius: 9999px;
+  background: linear-gradient(135deg, rgba(30,41,59,0.85), rgba(15,23,42,0.85));
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.07);
+  backdrop-filter: blur(6px);
+}
+.progress-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  background: linear-gradient(90deg,#fb7185,#f43f5e,#fb923c,#fb7185); /* default, overridden inline */
+  background-size: 200% 100%;
+  animation: progress-shimmer 3.5s linear infinite;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 2px 6px -1px rgba(244,63,94,0.55), 0 4px 14px -2px rgba(251,113,133,0.45);
+  transform-origin: left center;
+}
+.progress-bar-fill:after {
+  content: "";
+  position: absolute; inset:0; 
+  background: radial-gradient(circle at 25% 50%,rgba(255,255,255,0.35),transparent 70%);
+  mix-blend-mode: overlay; opacity:.45; pointer-events:none;
+}
+.progress-bar-fill:before {
+  content:""; position:absolute; top:0; bottom:0; width:60%; left:0;
+  background: linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,0.55),rgba(255,255,255,0));
+  mix-blend-mode: screen; opacity:.55; pointer-events:none;
+  animation: progress-glint 2.8s linear infinite;
+}
+@keyframes progress-glint { from { transform: translateX(-60%); } to { transform: translateX(160%); } }
+
+/* Slight breathing illusion (subtle width micro-variation) */
+.progress-illusion { animation: progress-shimmer 3.5s linear infinite, progress-width-pulse 6s ease-in-out infinite; }
+@keyframes progress-width-pulse { 0%,100% { transform: scaleX(1); } 50% { transform: scaleX(1.015); } }
+
+/* Color threshold utility classes (fallback if JS inline not applied) */
+.progress-low { background: linear-gradient(90deg,#dc2626,#f87171,#fb923c); }
+.progress-mid { background: linear-gradient(90deg,#f59e0b,#fbbf24,#fb923c); }
+.progress-high { background: linear-gradient(90deg,#10b981,#34d399,#10b981); }
+.progress-max { background: linear-gradient(90deg,#6366f1,#8b5cf6,#ec4899); }
+.progress-badge {
+  position: absolute; left:50%; top:50%; transform: translate(-50%,-50%);
+  font-size: 0.70rem; letter-spacing:.5px; font-weight:600; text-transform:uppercase;
+  color:#fff; text-shadow:0 2px 4px rgba(0,0,0,0.55);
+  pointer-events:none; white-space:nowrap;
+}
+.progress-container-animated .progress-bar-fill { animation: progress-shimmer 3.5s linear infinite, progress-pulse-glow 5.8s ease-in-out infinite; }

@@ -220,3 +220,16 @@ model pagos_payphone {
 
   @@map("pagos_payphone")
 }
+
+/// Publicaciones de redes sociales (Facebook / Instagram) para mostrar en landing
+model social_posts {
+  id             BigInt   @id @default(autoincrement())
+  platform       String   // 'facebook' | 'instagram'
+  url            String
+  orden          Int      @default(0)
+  activo         Boolean  @default(true)
+  fecha_creacion DateTime @default(now())
+
+  @@index([activo, orden])
+  @@map("social_posts")
+}

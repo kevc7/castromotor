@@ -16,6 +16,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "CASTROMOTOR SORTEOS",
   description: "Castromotor — Rifas y sorteos",
+  // Meta requerida por Facebook / WhatsApp Business para verificar el dominio
+  other: {
+    'facebook-domain-verification': 'bj5dmzuins4o7texoptjewihp04ymd'
+  }
 };
 
 export default function RootLayout({
@@ -27,10 +31,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <Script src="https://pay.payphonetodoesposible.com/payphone-client/PayPhone.js" strategy="afterInteractive" />
-        {/* Logo flotante persistente */}
-        <a href="/" className="fixed z-40 inline-flex items-center group left-2 top-16 sm:left-3 sm:top-16 md:left-4 md:top-20">
-          <img src="/logo.png" alt="Logo" className="h-16 w-16 sm:h-20 sm:w-20 md:h-24 md:w-24 lg:h-28 lg:w-28 rounded-full shadow-lg ring-1 ring-white/10 animate-float" />
-        </a>
+  {/* Logo flotante removido según solicitud */}
         {children}
         {/* Botón flotante de WhatsApp */}
         <a

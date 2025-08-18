@@ -14,6 +14,8 @@ type Row = {
   cliente_apellidos: string | null;
   cliente_correo: string | null;
   cliente_telefono: string | null;
+  cliente_cedula: string | null;
+  cliente_direccion: string | null;
 };
 
 export default function NumerosVendidosPage() {
@@ -91,8 +93,10 @@ export default function NumerosVendidosPage() {
               <tr className="text-left text-slate-300">
                 <th className="px-3 py-2 border-b border-white/10">Número</th>
                 <th className="px-3 py-2 border-b border-white/10">Cliente</th>
+                <th className="px-3 py-2 border-b border-white/10">Cédula</th>
                 <th className="px-3 py-2 border-b border-white/10">Correo</th>
                 <th className="px-3 py-2 border-b border-white/10">Teléfono</th>
+                <th className="px-3 py-2 border-b border-white/10">Dirección</th>
                 <th className="px-3 py-2 border-b border-white/10">Sorteo</th>
               </tr>
             </thead>
@@ -106,8 +110,10 @@ export default function NumerosVendidosPage() {
                 <tr key={String(r.id)} className="odd:bg-white/[.03]">
                   <td className="px-3 py-2 font-mono">{r.numero_texto}</td>
                   <td className="px-3 py-2">{[r.cliente_nombres, r.cliente_apellidos].filter(Boolean).join(' ') || '—'}</td>
+                  <td className="px-3 py-2">{r.cliente_cedula || '—'}</td>
                   <td className="px-3 py-2">{r.cliente_correo || '—'}</td>
                   <td className="px-3 py-2">{r.cliente_telefono || '—'}</td>
+                  <td className="px-3 py-2">{r.cliente_direccion || '—'}</td>
                   <td className="px-3 py-2">{r.sorteo_nombre}</td>
                 </tr>
               ))}

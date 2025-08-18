@@ -20,9 +20,15 @@ type Orden = {
 export default function AdminOrdersPage() {
   const [loading, setLoading] = useState(false);
   const [ordenes, setOrdenes] = useState<Orden[]>([]);
+  const [historial, setHistorial] = useState<Orden[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [stats, setStats] = useState<any>(null);
+  const [viewMode, setViewMode] = useState<'pendientes' | 'historial'>('pendientes');
+  const [filtroSorteo, setFiltroSorteo] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('');
+  const [searchCorreo, setSearchCorreo] = useState('');
+  const [searchCodigo, setSearchCodigo] = useState('');
   
   // Estados de carga para cada orden
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
@@ -71,6 +77,30 @@ export default function AdminOrdersPage() {
   useEffect(() => {
     cargarPendientes();
   }, []);
+
+  async function cargarHistorial() {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
+      const res = await fetch(`${API_BASE}/api/admin/orders?estado=all`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (res.status === 401) { window.location.href = '/admin/login'; return; }
+      const data = await res.json();
+      setHistorial(data.ordenes || []);
+    } catch (e: any) {
+      showMessage('error', e?.message || 'Error cargando historial');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const filteredHistorial = historial.filter(o => {
+    if (filtroSorteo && !((o.sorteo?.nombre || String(o.sorteo_id)) === filtroSorteo)) return false;
+    if (filtroEstado && (o.estado_pago||'').toLowerCase() !== filtroEstado) return false;
+    if (searchCorreo && !o.cliente?.correo_electronico?.toLowerCase().includes(searchCorreo.toLowerCase())) return false;
+    if (searchCodigo && !(o.codigo||'').toLowerCase().includes(searchCodigo.toLowerCase())) return false;
+    return true;
+  });
 
   async function aprobar(ordenId: string | number) {
     const orderKey = String(ordenId);
@@ -180,29 +210,66 @@ export default function AdminOrdersPage() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-[#0f1725] to-[#0b1220] text-white">
       <div className="px-6 pt-8 pb-4 max-w-5xl mx-auto">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Órdenes pendientes</h1>
-            <p className="text-slate-300 mt-1">Aprueba órdenes y asigna números en forma transaccional.</p>
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-bold tracking-tight">{viewMode === 'pendientes' ? 'Órdenes pendientes' : 'Historial de órdenes'}</h1>
+            <p className="text-slate-300 text-sm">{viewMode === 'pendientes' ? 'Aprueba órdenes y asigna números en forma transaccional.' : 'Consulta y filtra todas las órdenes registradas.'}</p>
           </div>
-          <a href="/admin" className="px-3 py-2 rounded-md border border-white/10 bg-white/5 hover:bg-white/10 text-sm">← Volver al panel</a>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 md:gap-3">
+            <div className="flex rounded-lg overflow-hidden border border-white/10">
+              <button onClick={() => { setViewMode('pendientes'); cargarPendientes(); }} className={`px-3 py-2 text-sm font-medium transition-colors ${viewMode==='pendientes' ? 'bg-rose-600 text-white' : 'bg-white/5 hover:bg-white/10 text-slate-200'}`}>Pendientes</button>
+              <button onClick={() => { setViewMode('historial'); if(!historial.length) cargarHistorial(); }} className={`px-3 py-2 text-sm font-medium transition-colors ${viewMode==='historial' ? 'bg-rose-600 text-white' : 'bg-white/5 hover:bg-white/10 text-slate-200'}`}>Historial</button>
+            </div>
+            <a href="/admin" className="px-3 py-2 rounded-md border border-white/10 bg-white/5 hover:bg-white/10 text-sm whitespace-nowrap">← Volver al panel</a>
+          </div>
         </div>
       </div>
 
       <div className="max-w-5xl mx-auto px-6 space-y-4">
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={cargarPendientes} 
-            disabled={loading}
-            className="px-3 py-2 rounded-md border border-white/10 bg-white/10 hover:bg-white/20 text-white disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
-          >
-            {loading && <LoadingSpinner size="sm" />}
-            {loading ? 'Actualizando...' : 'Refrescar'}
-          </button>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => viewMode==='pendientes' ? cargarPendientes() : cargarHistorial()}
+              disabled={loading}
+              className="px-3 py-2 rounded-md border border-white/10 bg-white/10 hover:bg-white/20 text-white disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+            >
+              {loading && <LoadingSpinner size="sm" />}
+              {loading ? 'Actualizando...' : 'Refrescar'}
+            </button>
+            {viewMode==='historial' && (
+              <>
+                <div className="flex flex-col">
+                  <label className="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Sorteo</label>
+                  <select value={filtroSorteo} onChange={e=>setFiltroSorteo(e.target.value)} className="px-2 py-1.5 rounded-md bg-black/40 border border-white/10 text-sm min-w-[140px]">
+                    <option value="">Todos</option>
+                    {[...new Set(historial.map(h => h.sorteo?.nombre || String(h.sorteo_id)))].filter(Boolean).map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Estado</label>
+                  <select value={filtroEstado} onChange={e=>setFiltroEstado(e.target.value)} className="px-2 py-1.5 rounded-md bg-black/40 border border-white/10 text-sm min-w-[120px]">
+                    <option value="">Todos</option>
+                    {Array.from(new Set(historial.map(h => (h.estado_pago||'').toLowerCase()))).map(est => <option key={est} value={est}>{est}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Código</label>
+                  <input value={searchCodigo} onChange={e=>setSearchCodigo(e.target.value)} placeholder="OR-..." className="px-2 py-1.5 rounded-md bg-black/40 border border-white/10 text-sm placeholder:text-slate-500" />
+                </div>
+                <div className="flex flex-col">
+                  <label className="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Correo</label>
+                  <input value={searchCorreo} onChange={e=>setSearchCorreo(e.target.value)} placeholder="cliente@correo" className="px-2 py-1.5 rounded-md bg-black/40 border border-white/10 text-sm placeholder:text-slate-500" />
+                </div>
+                {(filtroSorteo || filtroEstado || searchCorreo || searchCodigo) && (
+                  <button onClick={()=>{setFiltroSorteo('');setFiltroEstado('');setSearchCorreo('');setSearchCodigo('');}} className="self-end h-9 px-3 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-xs">Limpiar</button>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
-        {/* Stats header */}
-        {stats && (
+        {/* Stats header (solo en pendientes) */}
+        {viewMode==='pendientes' && stats && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <Stat title="Ganancias" value={`$${Number(stats.total_ganancias).toFixed(2)}`} />
             <Stat title="Tickets vendidos" value={`${Number(stats.tickets_vendidos)}`} />
@@ -263,15 +330,13 @@ export default function AdminOrdersPage() {
               </div>
             </div>
           )}
-          
-          {!loading && ordenes.length === 0 && (
-            <div className="text-center py-8 text-slate-400">
-              <div className="text-4xl mb-2">📋</div>
-              <div className="text-sm">No hay órdenes pendientes.</div>
-            </div>
+          {!loading && viewMode==='pendientes' && ordenes.length === 0 && (
+            <div className="text-center py-8 text-slate-400"><div className="text-4xl mb-2">📋</div><div className="text-sm">No hay órdenes pendientes.</div></div>
           )}
-          
-          {ordenes.map((o) => {
+          {!loading && viewMode==='historial' && filteredHistorial.length === 0 && (
+            <div className="text-center py-8 text-slate-400"><div className="text-4xl mb-2">🗂️</div><div className="text-sm">Sin resultados para los filtros.</div></div>
+          )}
+          {(viewMode==='pendientes' ? ordenes : filteredHistorial).map((o) => {
             const orderKey = String(o.id);
             const isProcessing = loadingStates[orderKey] || processingOrder === orderKey;
             const isDisabled = isProcessing || processingOrder !== null;
@@ -283,32 +348,36 @@ export default function AdminOrdersPage() {
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
                     <div className="font-semibold">{o.codigo}</div>
-                    <div className="text-sm text-slate-300">Estado: {o.estado_pago}</div>
+                    <div className="text-sm"><span className={`px-2 py-0.5 rounded-md text-xs font-medium tracking-wide ${/aprobado|aprobada/i.test(o.estado_pago||'') ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' : /pendiente/i.test(o.estado_pago||'') ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30' : /rechazado|rechazada/i.test(o.estado_pago||'') ? 'bg-rose-500/15 text-rose-300 border border-rose-500/30' : 'bg-white/10 text-slate-300 border border-white/10'}`}>{o.estado_pago}</span></div>
                     <div className="text-sm text-slate-300">Sorteo: {o.sorteo?.nombre ?? String(o.sorteo_id ?? "-")}</div>
                   </div>
                   <div className="flex items-center gap-2">
                     <button 
                       onClick={() => toggle(o.id)} 
-                      disabled={isDisabled}
+                      disabled={isDisabled && viewMode==='pendientes'}
                       className="px-3 py-2 rounded-md bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {String(openId) === orderKey ? 'Ocultar' : 'Ver detalles'}
                     </button>
-                    <button 
-                      onClick={() => aprobar(o.id)} 
-                      disabled={isDisabled}
-                      className="px-3 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 min-w-[100px] justify-center"
-                    >
-                      {isProcessing && loadingStates[orderKey] && <LoadingSpinner size="sm" />}
-                      {isProcessing && loadingStates[orderKey] ? 'Aprobando...' : 'Aprobar'}
-                    </button>
-                    <button 
-                      onClick={() => abrirRechazo(o.id)} 
-                      disabled={isDisabled}
-                      className="px-3 py-2 rounded-md bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Rechazar
-                    </button>
+                    {viewMode==='pendientes' && (
+                      <>
+                        <button 
+                          onClick={() => aprobar(o.id)} 
+                          disabled={isDisabled}
+                          className="px-3 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2 min-w-[100px] justify-center"
+                        >
+                          {isProcessing && loadingStates[orderKey] && <LoadingSpinner size="sm" />}
+                          {isProcessing && loadingStates[orderKey] ? 'Aprobando...' : 'Aprobar'}
+                        </button>
+                        <button 
+                          onClick={() => abrirRechazo(o.id)} 
+                          disabled={isDisabled}
+                          className="px-3 py-2 rounded-md bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Rechazar
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
 

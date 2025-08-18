@@ -81,6 +81,7 @@ export default function AdminDashboard() {
         <Card title="Órdenes" desc="Revisa y aprueba órdenes" href="/admin/orders" color="from-emerald-600 to-teal-600" />
         <Card title="Métodos de pago" desc="Cuentas bancarias y estados" href="/admin/metodos-pago" color="from-rose-600 to-pink-600" />
         <Card title="Números vendidos" desc="Listado y búsqueda" href="/admin/numeros-vendidos" color="from-amber-600 to-orange-600" />
+  <Card title="Social posts" desc="Facebook / Instagram" href="/admin/social-posts" color="from-sky-600 to-cyan-600" />
       </div>
     </main>
   );
