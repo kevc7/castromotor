@@ -508,10 +508,6 @@ export default function SorteoPage() {
                         setMsg(null); setMsgType(null);
                         const currentErrors = validate();
                         if (Object.keys(currentErrors).length > 0) {
-                          // Enfocar el primer campo con error
-                          const firstErrorKey = Object.keys(currentErrors)[0];
-                          const input = document.querySelector(`[name="${firstErrorKey}"]`) as HTMLInputElement;
-                          input?.focus();
                           throw new Error('Completa los campos requeridos en tus datos.');
                         }
                         
@@ -519,7 +515,7 @@ export default function SorteoPage() {
                         if (conteos && solicitados > Number(conteos.disponibles || 0)) throw new Error(`Solo quedan ${conteos.disponibles} números disponibles`);
                         
                         setPayOpening(true);
-                        setMsg('Iniciando pago seguro con Payphone...');
+                        setMsg('Preparando pago con Payphone...');
                         setMsgType('info');
 
                         const r = await fetch(`${API_BASE}/api/payments/payphone/init`, {
@@ -539,12 +535,76 @@ export default function SorteoPage() {
                         
                         const d = await r.json();
                         
-                        if (!r.ok || !d.paymentUrl) {
-                          throw new Error(d?.detalle || d?.error || 'No se pudo iniciar el pago con Payphone.');
+                        if (!r.ok || !d.payphoneConfig) {
+                          throw new Error(d?.error || 'No se pudo iniciar el pago con Payphone.');
                         }
 
-                        // Redirigir al usuario a la pasarela de pago de Payphone
-                        window.location.href = d.paymentUrl;
+                        setMsg('Abriendo cajita de pagos...');
+                        
+                        // Cargar dinámicamente la Cajita de Pagos de Payphone
+                        if (typeof window !== 'undefined') {
+                          // Verificar si ya está cargado el SDK
+                          if (!(window as any).PPaymentButtonBox) {
+                            // Cargar CSS
+                            const link = document.createElement('link');
+                            link.rel = 'stylesheet';
+                            link.href = 'https://cdn.payphonetodoesposible.com/box/v1.1/payphone-payment-box.css';
+                            document.head.appendChild(link);
+                            
+                            // Cargar JS
+                            const script = document.createElement('script');
+                            script.src = 'https://cdn.payphonetodoesposible.com/box/v1.1/payphone-payment-box.js';
+                            script.type = 'module';
+                            
+                            await new Promise((resolve, reject) => {
+                              script.onload = resolve;
+                              script.onerror = reject;
+                              document.head.appendChild(script);
+                            });
+                            
+                            // Esperar un poco más para que se inicialice
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                          }
+                          
+                          // Verificar que el SDK esté disponible
+                          if ((window as any).PPaymentButtonBox) {
+                            console.log('🔍 Configuración Payphone:', d.payphoneConfig);
+                            
+                            // Crear contenedor temporal para la cajita
+                            const containerId = 'payphone-button-container';
+                            let container = document.getElementById(containerId);
+                            if (!container) {
+                              container = document.createElement('div');
+                              container.id = containerId;
+                              container.style.position = 'fixed';
+                              container.style.top = '50%';
+                              container.style.left = '50%';
+                              container.style.transform = 'translate(-50%, -50%)';
+                              container.style.zIndex = '9999';
+                              container.style.background = 'white';
+                              container.style.padding = '20px';
+                              container.style.borderRadius = '10px';
+                              container.style.boxShadow = '0 10px 30px rgba(0,0,0,0.3)';
+                              document.body.appendChild(container);
+                            }
+                            
+                            // Crear la cajita de pagos
+                            const ppb = new (window as any).PPaymentButtonBox(d.payphoneConfig);
+                            ppb.render(containerId);
+                            
+                            setMsg('✅ Cajita de pagos abierta. Completa tu pago en la ventana.');
+                            setMsgType('success');
+                            
+                            // Limpiar contenedor después de un tiempo
+                            setTimeout(() => {
+                              const cont = document.getElementById(containerId);
+                              if (cont) cont.remove();
+                            }, 300000); // 5 minutos
+                            
+                          } else {
+                            throw new Error('No se pudo cargar el SDK de Payphone.');
+                          }
+                        }
 
                       } catch (e: any) {
                         setMsg(e?.message || 'Error iniciando Payphone');
@@ -555,7 +615,7 @@ export default function SorteoPage() {
                     }}
                     className="w-full sm:w-auto px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-md transition-transform transform hover:scale-105"
                   >
-                    {payOpening ? 'Abriendo Payphone…' : 'Pagar con Payphone'}
+                    {payOpening ? 'Preparando Payphone…' : 'Pagar con Payphone'}
                   </button>
                 )}
                 
