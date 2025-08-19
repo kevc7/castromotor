@@ -34,17 +34,17 @@ ensureDir(path.resolve(uploadsRoot, "facturas"));
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
-app.use("/api", publicRouter);
-app.use("/api/admin", adminRouter);
-
 // Middleware de logging para requests
 app.use((req, res, next) => {
-  console.log(`📨 [${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   if (req.body && Object.keys(req.body).length > 0) {
-    console.log(`📨 [Request Body] ${JSON.stringify(req.body, null, 2)}`);
+    console.log(`[Request Body] ${JSON.stringify(req.body, null, 2)}`);
   }
   next();
 });
+
+app.use("/api", publicRouter);
+app.use("/api/admin", adminRouter);
 
 // Servir archivos subidos (comprobantes)
 app.use(
@@ -58,16 +58,15 @@ console.log('Uploads directory exists:', fs.existsSync(path.resolve(process.cwd(
 
 // Manejador de errores global: responder siempre JSON
 app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  const status = Number(err?.status || err?.statusCode || 400);
+  const status = Number(err?.status || err?.statusCode || 500);
   const msg = err?.message || 'Error inesperado';
   
-  console.error('❌ [API Error]', {
+  console.error('[API Error]', {
     url: req.url,
     method: req.method,
     status,
     message: msg,
-    stack: err?.stack,
-    body: req.body
+    stack: process.env.NODE_ENV === 'development' ? err?.stack : undefined
   });
   
   res.status(status).json({ error: msg });
