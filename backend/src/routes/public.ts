@@ -66,7 +66,7 @@ publicRouter.post('/verificaciones/solicitar', async (req: Request, res: Respons
   }
 });
 
-// Payphone INIT: crea orden pendiente con reservas y devuelve payload para cajita
+// Payphone INIT: crea orden pendiente, llama a la API de Payphone y devuelve la URL de pago
 publicRouter.post('/payments/payphone/init', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = z.object({
@@ -81,6 +81,8 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
       cantidad_numeros: z.coerce.number().int().min(1).optional(),
     }).parse(req.body);
 
+    // --- Lógica de negocio existente (crear cliente, orden, reservar números) ---
+    // ... (esta parte se mantiene igual hasta la creación del pago en BD) ...
     // Cliente: reutiliza por correo si existe, sino crea básico
     let cliente = await prisma.clientes.findFirst({ where: { correo_electronico: body.correo_electronico } });
     if (!cliente) {
@@ -167,16 +169,85 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
         await sendMail({ to: cliente.correo_electronico, subject: `Orden recibida ${codigo}`, html });
       }
     } catch (e) { console.error('Error enviando correo orden recibida (Payphone):', e); }
+    // --- Fin de la lógica de negocio existente ---
 
-    const payload = {
-      storeId: process.env.PAYPHONE_STORE_ID,
-      amount: Math.round(monto_total * 100), // Payphone suele usar centavos
+    // --- NUEVO: Llamada a la API de Payphone para preparar el pago ---
+    const token = process.env.PAYPHONE_TOKEN;
+    if (!token) {
+      console.error('❌ PAYPHONE_TOKEN no está configurado en las variables de entorno.');
+      return res.status(500).json({ error: 'Error de configuración del servidor de pagos.' });
+    }
+
+    const amountWithTax = Math.round(monto_total * 100); // Total en centavos
+    const amountWithoutTax = Math.round(amountWithTax / 1.12); // Asumiendo 12% IVA
+    
+    const payphonePayload = {
+      amount: amountWithTax,
+      amountWithTax: amountWithTax,
+      amountWithoutTax: amountWithoutTax,
+      tax: amountWithTax - amountWithoutTax,
       clientTransactionId: clientTxnId,
+      currency: "USD",
       email: body.correo_electronico,
-      // responseUrl: process.env.PAYPHONE_RESPONSE_URL, // Comentado para usar callbacks
+      phoneNumber: body.telefono || "",
+      documentId: body.cedula || "",
+      responseUrl: `${process.env.FRONTEND_URL}/sorteos/${body.sorteo_id}?orden_id=${orden.id}&payphone_confirm=true`,
+      cancellationUrl: `${process.env.FRONTEND_URL}/sorteos/${body.sorteo_id}?orden_id=${orden.id}&payphone_cancel=true`,
+      // storeId es opcional, si lo necesitas, usa el "Identificador" de tu app Payphone
+      // storeId: process.env.PAYPHONE_STORE_ID, 
     };
-    res.json({ ok: true, orden_id: orden.id, payload });
-  } catch (e) { next(e); }
+
+    console.log('🔍 [Payphone INIT] Preparando para llamar a la API de Payphone con el siguiente payload:', payphonePayload);
+
+    try {
+      const payphoneApiUrl = 'https://pay.payphonetodoesposible.com/api/Sale';
+      const apiResponse = await fetch(payphoneApiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payphonePayload),
+      });
+
+      const responseText = await apiResponse.text();
+      console.log(`🔍 [Payphone INIT] Respuesta de la API: Status ${apiResponse.status}, Body: ${responseText}`);
+
+      if (!apiResponse.ok) {
+        // Si la API de Payphone falla, la transacción no puede continuar.
+        throw new Error(`Payphone API Error: ${responseText}`);
+      }
+
+      const responseData = JSON.parse(responseText);
+      
+      if (!responseData.payWithPayphone) {
+        throw new Error('La respuesta de Payphone no contiene la URL de pago (payWithPayphone).');
+      }
+
+      // Éxito: Devolvemos la URL para que el frontend la abra.
+      res.json({ 
+        ok: true, 
+        orden_id: orden.id, 
+        paymentUrl: responseData.payWithPayphone,
+        clientTransactionId: clientTxnId, // Devolver para polling opcional
+      });
+
+    } catch (apiError: any) {
+      console.error('❌ [Payphone INIT] Fallo al comunicarse con la API de Payphone:', apiError.message);
+      // Como la API falló, no podemos proceder. Devolvemos un error claro.
+      // No es necesario revertir la orden aquí, el cronjob de limpieza se encargará de las órdenes pendientes.
+      return res.status(502).json({ 
+        error: 'No se pudo iniciar el pago',
+        detalle: 'El servicio de pagos no respondió correctamente. Por favor, inténtalo de nuevo más tarde.',
+        // En desarrollo, podrías enviar el error real
+        // rawError: apiError.message 
+      });
+    }
+
+  } catch (e) { 
+    console.error('❌ Error general en /payments/payphone/init:', e);
+    next(e); 
+  }
 });
 
 // Receptor de respuesta (webhook/redirección). Solo registra y confirma con API server-side.

@@ -506,11 +506,22 @@ export default function SorteoPage() {
                     onClick={async () => {
                       try {
                         setMsg(null); setMsgType(null);
+                        const currentErrors = validate();
+                        if (Object.keys(currentErrors).length > 0) {
+                          // Enfocar el primer campo con error
+                          const firstErrorKey = Object.keys(currentErrors)[0];
+                          const input = document.querySelector(`[name="${firstErrorKey}"]`) as HTMLInputElement;
+                          input?.focus();
+                          throw new Error('Completa los campos requeridos en tus datos.');
+                        }
+                        
                         const solicitados = paqueteSeleccionado ? Number(paqueteSeleccionado.cantidad_numeros || 0) : Number(cantidad || 0);
                         if (conteos && solicitados > Number(conteos.disponibles || 0)) throw new Error(`Solo quedan ${conteos.disponibles} números disponibles`);
-                        if (!cliente.correo_electronico || !cliente.nombres) throw new Error('Completa tus datos básicos (nombres y correo)');
-                        if (errors.correo_electronico) throw new Error(errors.correo_electronico);
+                        
                         setPayOpening(true);
+                        setMsg('Iniciando pago seguro con Payphone...');
+                        setMsgType('info');
+
                         const r = await fetch(`${API_BASE}/api/payments/payphone/init`, {
                           method: 'POST', headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
@@ -525,105 +536,16 @@ export default function SorteoPage() {
                             cantidad_numeros: paqueteId ? undefined : Number(cantidad)
                           })
                         });
+                        
                         const d = await r.json();
-                        if (!r.ok) throw new Error(d?.error || 'No se pudo iniciar Payphone');
-                        const payload = d?.payload;
-                        const storeId = payload?.storeId;
-                        const amount = payload?.amount; // centavos
-                        const clientTransactionId = payload?.clientTransactionId;
-                        const responseUrl = payload?.responseUrl;
-                        // Abrir cajita Payphone inline con callbacks
-                        // @ts-ignore
-                        if (window?.PayPhone?.Button) {
-                          console.log('Payphone SDK config:', { storeId, amount, clientTransactionId });
-                          
-                          // @ts-ignore
-                          window.PayPhone.Button({
-                            storeId: storeId,
-                            amount: amount,
-                            clientTransactionId: clientTransactionId,
-                            currency: 'USD',
-                            countryCode: 'EC',
-                            email: cliente.correo_electronico,
-                            phoneNumber: cliente.telefono,
-                            onSuccess: async (result: any) => {
-                              console.log('Payphone success callback:', result);
-                              try {
-                                // Esperar 5 segundos para que Payphone procese internamente
-                                setMsg('⏳ Procesando confirmación del pago...');
-                                setMsgType('info');
-                                
-                                await new Promise(resolve => setTimeout(resolve, 5000));
-                                
-                                // Intentar confirmación con retry (máximo 3 intentos)
-                                let attempts = 0;
-                                let success = false;
-                                
-                                while (attempts < 3 && !success) {
-                                  attempts++;
-                                  console.log(`Intento de confirmación ${attempts}/3`);
-                                  
-                                  try {
-                                    const confirmRes = await fetch(`${API_BASE}/api/payments/payphone/confirm`, {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ clientTransactionId })
-                                    });
-                                    
-                                    console.log(`Backend confirm response (intento ${attempts}):`, confirmRes.status);
-                                    const confirmData = await confirmRes.json();
-                                    console.log(`Backend confirm data (intento ${attempts}):`, confirmData);
-                                    
-                                    if (confirmRes.ok) {
-                                      success = true;
-                                      setMsg('✅ Pago aprobado exitosamente. ¡Gracias por tu compra!');
-                                      setMsgType('success');
-                                      // Redirigir después de 3 segundos
-                                      setTimeout(() => {
-                                        window.location.href = '/';
-                                      }, 3000);
-                                    } else {
-                                      throw new Error(confirmData?.error || 'Error confirmando pago');
-                                    }
-                                  } catch (error: any) {
-                                    console.error(`Error en intento ${attempts}:`, error);
-                                    
-                                    if (attempts < 3) {
-                                      setMsg(`⏳ Reintentando confirmación... (${attempts}/3)`);
-                                      setMsgType('info');
-                                      // Esperar 2 segundos antes del siguiente intento
-                                      await new Promise(resolve => setTimeout(resolve, 2000));
-                                    } else {
-                                      throw error;
-                                    }
-                                  }
-                                }
-                                
-                                if (!success) {
-                                  throw new Error('No se pudo confirmar el pago después de 3 intentos');
-                                }
-                                
-                              } catch (error: any) {
-                                console.error('Error final en onSuccess:', error);
-                                setMsg(`❌ Error: ${error.message}`);
-                                setMsgType('error');
-                              }
-                            },
-                            onError: (error: any) => {
-                              console.error('Payphone error callback:', error);
-                              setMsg(`❌ Error en el pago: ${error.message || 'Pago no aprobado'}`);
-                              setMsgType('error');
-                            },
-                            onCancel: () => {
-                              console.log('Payphone cancelled callback');
-                              setMsg('❌ Pago cancelado por el usuario');
-                              setMsgType('error');
-                            }
-                          }).open();
-                        } else {
-                          // fallback: redirigir a return
-                          window.location.href = `/pagos/payphone/return?clientTransactionId=${encodeURIComponent(clientTransactionId)}`;
+                        
+                        if (!r.ok || !d.paymentUrl) {
+                          throw new Error(d?.detalle || d?.error || 'No se pudo iniciar el pago con Payphone.');
                         }
+
+                        // Redirigir al usuario a la pasarela de pago de Payphone
+                        window.location.href = d.paymentUrl;
+
                       } catch (e: any) {
                         setMsg(e?.message || 'Error iniciando Payphone');
                         setMsgType('error');
@@ -631,7 +553,7 @@ export default function SorteoPage() {
                         setPayOpening(false);
                       }
                     }}
-                    className="w-full sm:w-auto px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white"
+                    className="w-full sm:w-auto px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-md transition-transform transform hover:scale-105"
                   >
                     {payOpening ? 'Abriendo Payphone…' : 'Pagar con Payphone'}
                   </button>
