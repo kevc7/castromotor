@@ -951,7 +951,17 @@ publicRouter.get('/social_posts', async (_req: Request, res: Response, next: Nex
 publicRouter.get("/sorteos/:id", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const params = z.object({ id: z.string() }).parse(req.params);
-    const sorteoId = BigInt(params.id);
+    if (!/^\d+$/.test(params.id)) {
+      console.warn('⚠️  /sorteos/:id id no numérico recibido:', params.id);
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+    let sorteoId: bigint;
+    try {
+      sorteoId = BigInt(params.id);
+    } catch (convErr) {
+      console.error('❌ Error convirtiendo a BigInt el id:', params.id, convErr);
+      return res.status(400).json({ error: 'ID inválido' });
+    }
     const sorteo = await prisma.sorteos.findUnique({ where: { id: sorteoId } });
     if (!sorteo) return res.status(404).json({ error: "Sorteo no encontrado" });
     // Solo paquetes publicados para clientes
