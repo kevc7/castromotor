@@ -504,90 +504,52 @@ export default function SorteoPage() {
                 {metodoPagoId && metodos.find(m => Number(m.id) === Number(metodoPagoId))?.nombre?.toLowerCase().includes('payphone') && (
                   <button
                     onClick={async () => {
-                      console.log('🚀 [Frontend] === INICIO PROCESO PAYPHONE ===');
                       try {
                         setMsg(null); setMsgType(null);
-                        
-                        console.log('🔍 [Frontend] Validando formulario...');
                         const currentErrors = validate();
-                        console.log('🔍 [Frontend] Errores de validación:', currentErrors);
-                        
                         if (Object.keys(currentErrors).length > 0) {
-                          console.error('❌ [Frontend] Formulario inválido:', currentErrors);
                           throw new Error('Completa los campos requeridos en tus datos.');
                         }
                         
                         const solicitados = paqueteSeleccionado ? Number(paqueteSeleccionado.cantidad_numeros || 0) : Number(cantidad || 0);
-                        console.log('🔍 [Frontend] Verificando stock:', { solicitados, disponibles: conteos?.disponibles });
-                        
-                        if (conteos && solicitados > Number(conteos.disponibles || 0)) {
-                          console.error('❌ [Frontend] Stock insuficiente:', { solicitados, disponibles: conteos.disponibles });
-                          throw new Error(`Solo quedan ${conteos.disponibles} números disponibles`);
-                        }
+                        if (conteos && solicitados > Number(conteos.disponibles || 0)) throw new Error(`Solo quedan ${conteos.disponibles} números disponibles`);
                         
                         setPayOpening(true);
                         setMsg('Preparando pago con Payphone...');
                         setMsgType('info');
 
-                        const requestData = {
-                          nombres: cliente.nombres,
-                          apellidos: cliente.apellidos,
-                          cedula: cliente.cedula,
-                          correo_electronico: cliente.correo_electronico,
-                          telefono: cliente.telefono,
-                          direccion: cliente.direccion,
-                          sorteo_id: Number(sorteoId),
-                          paquete_id: paqueteId ? Number(paqueteId) : undefined,
-                          cantidad_numeros: paqueteId ? undefined : Number(cantidad)
-                        };
-
-                        console.log('📤 [Frontend] Enviando request a backend:', {
-                          url: `${API_BASE}/api/payments/payphone/init`,
-                          method: 'POST',
-                          data: requestData
-                        });
-
                         const r = await fetch(`${API_BASE}/api/payments/payphone/init`, {
-                          method: 'POST', 
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify(requestData)
+                          method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            nombres: cliente.nombres,
+                            apellidos: cliente.apellidos,
+                            cedula: cliente.cedula,
+                            correo_electronico: cliente.correo_electronico,
+                            telefono: cliente.telefono,
+                            direccion: cliente.direccion,
+                            sorteo_id: Number(sorteoId),
+                            paquete_id: paqueteId ? Number(paqueteId) : undefined,
+                            cantidad_numeros: paqueteId ? undefined : Number(cantidad)
+                          })
                         });
                         
-                        console.log('📥 [Frontend] Respuesta del backend:', {
-                          status: r.status,
-                          statusText: r.statusText,
-                          ok: r.ok,
-                          headers: Object.fromEntries(r.headers.entries())
-                        });
-
                         const d = await r.json();
-                        console.log('📥 [Frontend] Datos de respuesta:', d);
                         
                         if (!r.ok || !d.payphoneConfig) {
-                          console.error('❌ [Frontend] Error en respuesta:', { 
-                            status: r.status, 
-                            response: d,
-                            hasPayphoneConfig: !!d.payphoneConfig
-                          });
                           throw new Error(d?.error || 'No se pudo iniciar el pago con Payphone.');
                         }
 
                         setMsg('Abriendo cajita de pagos...');
-                        console.log('🔍 [Frontend] Iniciando carga de Payphone SDK...');
                         
                         // Cargar dinámicamente la Cajita de Pagos de Payphone
                         if (typeof window !== 'undefined') {
-                          console.log('🔍 [Frontend] Verificando SDK de Payphone...');
                           // Verificar si ya está cargado el SDK
                           if (!(window as any).PPaymentButtonBox) {
-                            console.log('🔍 [Frontend] SDK no cargado, cargando recursos...');
-                            
                             // Cargar CSS
                             const link = document.createElement('link');
                             link.rel = 'stylesheet';
                             link.href = 'https://cdn.payphonetodoesposible.com/box/v1.1/payphone-payment-box.css';
                             document.head.appendChild(link);
-                            console.log('✅ [Frontend] CSS de Payphone cargado');
                             
                             // Cargar JS
                             const script = document.createElement('script');
@@ -595,33 +557,23 @@ export default function SorteoPage() {
                             script.type = 'module';
                             
                             await new Promise((resolve, reject) => {
-                              script.onload = () => {
-                                console.log('✅ [Frontend] JavaScript de Payphone cargado');
-                                resolve(undefined);
-                              };
-                              script.onerror = (err) => {
-                                console.error('❌ [Frontend] Error cargando JavaScript de Payphone:', err);
-                                reject(err);
-                              };
+                              script.onload = resolve;
+                              script.onerror = reject;
                               document.head.appendChild(script);
                             });
                             
                             // Esperar un poco más para que se inicialice
-                            console.log('🔍 [Frontend] Esperando inicialización del SDK...');
                             await new Promise(resolve => setTimeout(resolve, 1000));
-                          } else {
-                            console.log('✅ [Frontend] SDK ya estaba cargado');
                           }
                           
                           // Verificar que el SDK esté disponible
                           if ((window as any).PPaymentButtonBox) {
-                            console.log('🔍 [Frontend] Configuración Payphone recibida:', d.payphoneConfig);
+                            console.log('🔍 Configuración Payphone:', d.payphoneConfig);
                             
                             // Crear contenedor temporal para la cajita
                             const containerId = 'payphone-button-container';
                             let container = document.getElementById(containerId);
                             if (!container) {
-                              console.log('🔍 [Frontend] Creando contenedor para cajita...');
                               container = document.createElement('div');
                               container.id = containerId;
                               container.style.position = 'fixed';
@@ -634,88 +586,30 @@ export default function SorteoPage() {
                               container.style.borderRadius = '10px';
                               container.style.boxShadow = '0 10px 30px rgba(0,0,0,0.3)';
                               document.body.appendChild(container);
-                              console.log('✅ [Frontend] Contenedor creado');
-                            } else {
-                              console.log('🔍 [Frontend] Reutilizando contenedor existente');
                             }
                             
                             // Crear la cajita de pagos
-                            console.log('🔍 [Frontend] Creando instancia de PPaymentButtonBox...');
-                            try {
-                              const ppb = new (window as any).PPaymentButtonBox(d.payphoneConfig);
-                              console.log('✅ [Frontend] Instancia PPaymentButtonBox creada');
-                              
-                              // Configurar callbacks para manejar el resultado del pago
-                              ppb.onSuccess = (response: any) => {
-                                console.log('✅ [Frontend] Pago exitoso callback:', response);
-                                setMsg('¡Pago procesado exitosamente! Redirigiendo...');
-                                setMsgType('success');
-                                
-                                // Redirigir a página de éxito después de un breve delay
-                                setTimeout(() => {
-                                  window.location.href = `/payphone/success?clientTxId=${d.payphoneConfig.clientTransactionId}&id=${response.id || ''}`;
-                                }, 2000);
-                              };
-                              
-                              ppb.onFailure = (error: any) => {
-                                console.error('❌ [Frontend] Pago fallido callback:', error);
-                                setMsg('El pago no pudo completarse. Intenta nuevamente.');
-                                setMsgType('error');
-                                
-                                // Redirigir a página de error después de un breve delay
-                                setTimeout(() => {
-                                  window.location.href = `/payphone/error?reason=payment_failed&message=${encodeURIComponent(error.message || 'Pago no completado')}`;
-                                }, 2000);
-                              };
-                              
-                              ppb.onCancelled = () => {
-                                console.log('ℹ️ [Frontend] Pago cancelado por usuario');
-                                setMsg('Pago cancelado.');
-                                setMsgType('error');
-                                
-                                // Limpiar contenedor
-                                const cont = document.getElementById(containerId);
-                                if (cont) cont.remove();
-                              };
-                              
-                              console.log('🔍 [Frontend] Renderizando cajita en contenedor...');
-                              ppb.render(containerId);
-                              console.log('✅ [Frontend] Cajita renderizada exitosamente');
-                              
-                              setMsg('✅ Cajita de pagos abierta. Completa tu pago en la ventana.');
-                              setMsgType('success');
-                              
-                              // Limpiar contenedor después de un tiempo
-                              setTimeout(() => {
-                                console.log('🔍 [Frontend] Limpiando contenedor por timeout...');
-                                const cont = document.getElementById(containerId);
-                                if (cont) {
-                                  cont.remove();
-                                  console.log('✅ [Frontend] Contenedor limpiado');
-                                }
-                              }, 300000); // 5 minutos
-                            } catch (payboxError) {
-                              console.error('❌ [Frontend] Error creando/renderizando PPaymentButtonBox:', payboxError);
-                              throw new Error(`Error inicializando cajita de pagos: ${payboxError}`);
-                            }
+                            const ppb = new (window as any).PPaymentButtonBox(d.payphoneConfig);
+                            ppb.render(containerId);
+                            
+                            setMsg('✅ Cajita de pagos abierta. Completa tu pago en la ventana.');
+                            setMsgType('success');
+                            
+                            // Limpiar contenedor después de un tiempo
+                            setTimeout(() => {
+                              const cont = document.getElementById(containerId);
+                              if (cont) cont.remove();
+                            }, 300000); // 5 minutos
                             
                           } else {
-                            console.error('❌ [Frontend] SDK no disponible después de la carga');
                             throw new Error('No se pudo cargar el SDK de Payphone.');
                           }
-                        } else {
-                          console.error('❌ [Frontend] Window no disponible (SSR?)');
-                          throw new Error('Entorno no compatible con Payphone.');
                         }
 
                       } catch (e: any) {
-                        console.error('❌ [Frontend] === ERROR GENERAL ===');
-                        console.error('❌ [Frontend] Error completo:', e);
-                        console.error('❌ [Frontend] Stack trace:', e?.stack);
                         setMsg(e?.message || 'Error iniciando Payphone');
                         setMsgType('error');
                       } finally {
-                        console.log('🔍 [Frontend] Finalizando proceso, limpiando estado...');
                         setPayOpening(false);
                       }
                     }}
