@@ -186,23 +186,34 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
     }
 
     // Convertir a centavos como requiere Payphone
-    const amountCents = Math.round(monto_total * 100);
-    const amountWithoutTaxCents = Math.round(amountCents / 1.12); // Asumiendo 12% IVA
-    const taxCents = amountCents - amountWithoutTaxCents;
+    const amountCents = Math.round(monto_total * 100); // total en centavos
+    const baseCents = Math.round(amountCents / 1.12);  // base gravada aproxima
+    const taxCents = amountCents - baseCents;          // IVA calculado
+    const amountWithTaxCents = baseCents;              // base gravada
+    const amountWithoutTaxCents = 0;                   // no hay parte 0% IVA
+    const reconstructed = amountWithTaxCents + amountWithoutTaxCents + taxCents; // sin tip/service
+    if (reconstructed !== amountCents) {
+      console.warn('⚠️  Discrepancia en suma montos Payphone', { amountCents, reconstructed, amountWithTaxCents, amountWithoutTaxCents, taxCents });
+    }
+    console.log('💰 [Payphone INIT] Breakdown:', { amountCents, amountWithTaxCents, amountWithoutTaxCents, taxCents });
 
     // Configuración para la Cajita de Pagos (según documentación oficial)
+    // Truncar reference a máximo 60 caracteres (límite habitual en gateways)
+    const fullRef = `Orden ${codigo} - ${sorteo.nombre}`;
+    const reference = fullRef.length > 60 ? fullRef.slice(0,57) + '...' : fullRef;
+
     const payphoneConfig = {
       token: token,
       clientTransactionId: clientTxnId,
       amount: amountCents,
       amountWithoutTax: amountWithoutTaxCents,
-      amountWithTax: amountWithoutTaxCents, // Base gravable
+      amountWithTax: amountWithTaxCents,
       tax: taxCents,
       service: 0,
       tip: 0,
       currency: "USD",
       storeId: process.env.PAYPHONE_STORE_ID || undefined, // Opcional según documentación
-      reference: `Orden ${codigo} - ${sorteo.nombre}`,
+      reference,
       lang: "es",
       defaultMethod: "card",
       timeZone: -5,
@@ -221,6 +232,9 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
       codigo,
       clientTransactionId: clientTxnId,
       amount: amountCents,
+      amountWithTax: amountWithTaxCents,
+      amountWithoutTax: amountWithoutTaxCents,
+      tax: taxCents,
       storeId: payphoneConfig.storeId
     });
 
