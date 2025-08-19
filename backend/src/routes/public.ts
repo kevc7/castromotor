@@ -69,6 +69,12 @@ publicRouter.post('/verificaciones/solicitar', async (req: Request, res: Respons
 // Payphone INIT: crea orden pendiente con reservas y devuelve configuración para la cajita
 publicRouter.post('/payments/payphone/init', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    console.log('[Payphone INIT] === INICIO DEL ENDPOINT ===');
+    console.log('[Payphone INIT] Request body completo:', JSON.stringify(req.body, null, 2));
+    console.log('[Payphone INIT] Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('[Payphone INIT] Method:', req.method);
+    console.log('[Payphone INIT] URL:', req.url);
+
     const body = z.object({
       nombres: z.string(),
       apellidos: z.string().optional(),
@@ -81,11 +87,13 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
       cantidad_numeros: z.coerce.number().int().min(1).optional(),
     }).parse(req.body);
 
-    console.log('🔍 [Payphone INIT] Datos recibidos:', body);
+    console.log('[Payphone INIT] Validación ZOD exitosa:', body);
 
     // Cliente: reutiliza por correo si existe, sino crea básico
+    console.log('[Payphone INIT] Buscando cliente por email:', body.correo_electronico);
     let cliente = await prisma.clientes.findFirst({ where: { correo_electronico: body.correo_electronico } });
     if (!cliente) {
+      console.log('[Payphone INIT] Cliente no existe, creando nuevo...');
       cliente = await prisma.clientes.create({ data: {
         nombres: body.nombres,
         apellidos: body.apellidos ?? '',
@@ -94,31 +102,60 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
         telefono: body.telefono ?? '',
         direccion: body.direccion ?? '',
       } as any });
+      console.log('[Payphone INIT] Cliente creado:', { id: cliente.id, email: cliente.correo_electronico });
+    } else {
+      console.log('[Payphone INIT] Cliente existente encontrado:', { id: cliente.id, email: cliente.correo_electronico });
     }
 
+    console.log('[Payphone INIT] Buscando sorteo ID:', body.sorteo_id);
     const sorteo = await prisma.sorteos.findUnique({ where: { id: body.sorteo_id } });
-    if (!sorteo) return res.status(404).json({ error: 'Sorteo no encontrado' });
+    if (!sorteo) {
+      console.error('[Payphone INIT] Sorteo no encontrado:', body.sorteo_id);
+      return res.status(404).json({ error: 'Sorteo no encontrado' });
+    }
+    console.log('[Payphone INIT] Sorteo encontrado:', { id: sorteo.id, nombre: sorteo.nombre });
 
     let cantidad = body.cantidad_numeros ?? 0;
     let monto_total = 0;
+    console.log('[Payphone INIT] Calculando cantidad y monto...');
+    
     if (body.paquete_id) {
+      console.log('[Payphone INIT] Usando paquete ID:', body.paquete_id);
       const paquete: any = await (prisma as any).paquetes.findUnique({ where: { id: BigInt(body.paquete_id) } });
-      if (!paquete || paquete.sorteo_id !== body.sorteo_id || paquete.estado !== 'publicado') return res.status(400).json({ error: 'Paquete inválido' });
+      if (!paquete || paquete.sorteo_id !== body.sorteo_id || paquete.estado !== 'publicado') {
+        console.error('[Payphone INIT] Paquete inválido:', { paquete_id: body.paquete_id, found: !!paquete });
+        return res.status(400).json({ error: 'Paquete inválido' });
+      }
       cantidad = Number(paquete.cantidad_numeros || 0);
       monto_total = Number(paquete.precio_total || 0);
+      console.log('[Payphone INIT] Paquete válido:', { cantidad, monto_total });
     } else if (cantidad > 0) {
       monto_total = Number(sorteo.precio_por_numero) * cantidad;
+      console.log('[Payphone INIT] Cálculo por números:', { cantidad, precio_unitario: sorteo.precio_por_numero, monto_total });
     } else {
+      console.error('[Payphone INIT] Ni paquete ni cantidad especificada');
       return res.status(400).json({ error: 'Debe indicar cantidad_numeros o paquete_id' });
     }
 
+    console.log('[Payphone INIT] Verificando disponibilidad...');
     const disponibles = await prisma.numeros_sorteo.count({ where: { sorteo_id: body.sorteo_id, estado: 'disponible' } });
-    if (disponibles < cantidad) return res.status(400).json({ error: `No hay suficientes números disponibles. Quedan ${disponibles}.` });
+    console.log('[Payphone INIT] Números disponibles:', disponibles, 'solicitados:', cantidad);
+    if (disponibles < cantidad) {
+      console.error('[Payphone INIT] Stock insuficiente:', { disponibles, solicitados: cantidad });
+      return res.status(400).json({ error: `No hay suficientes números disponibles. Quedan ${disponibles}.` });
+    }
 
+    console.log('[Payphone INIT] Buscando método de pago Payphone...');
     const mpPayphone: any = await (prisma as any).metodos_pago.findFirst({ where: { nombre: 'Payphone' } });
-    if (!mpPayphone) return res.status(400).json({ error: 'Método Payphone no configurado' });
+    if (!mpPayphone) {
+      console.error('[Payphone INIT] Método Payphone no configurado en BD');
+      return res.status(400).json({ error: 'Método Payphone no configurado' });
+    }
+    console.log('[Payphone INIT] Método Payphone encontrado:', { id: mpPayphone.id, nombre: mpPayphone.nombre });
 
     const codigo = `OR-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    console.log('[Payphone INIT] Creando orden con código:', codigo);
+    
     const orden = await prisma.ordenes.create({
       data: {
         codigo,
@@ -131,23 +168,34 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
         cantidad_numeros: cantidad,
       } as any,
     });
+    console.log('[Payphone INIT] Orden creada:', { id: orden.id, codigo: orden.codigo, monto: orden.monto_total });
 
     // Reservar números
-    await prisma.$transaction(async (tx) => {
-      const seleccion = await (tx as any).$queryRaw<{ id: bigint }[]>`
-        SELECT id FROM numeros_sorteo
-        WHERE sorteo_id = ${body.sorteo_id} AND estado = 'disponible'
-        ORDER BY random()
-        LIMIT ${cantidad}
-        FOR UPDATE SKIP LOCKED
-      `;
-      if (seleccion.length < cantidad) throw new Error('Stock insuficiente');
-      const ids = seleccion.map((s: { id: bigint }) => s.id);
-      await tx.numeros_sorteo.updateMany({ where: { id: { in: ids } }, data: { estado: 'reservado', orden_id: orden.id } });
-    });
+    console.log('[Payphone INIT] Iniciando reserva de números...');
+    try {
+      await prisma.$transaction(async (tx) => {
+        const seleccion = await (tx as any).$queryRaw<{ id: bigint }[]>`
+          SELECT id FROM numeros_sorteo
+          WHERE sorteo_id = ${body.sorteo_id} AND estado = 'disponible'
+          ORDER BY random()
+          LIMIT ${cantidad}
+          FOR UPDATE SKIP LOCKED
+        `;
+        console.log('[Payphone INIT] Números seleccionados para reserva:', seleccion.length);
+        if (seleccion.length < cantidad) throw new Error('Stock insuficiente');
+        const ids = seleccion.map((s: { id: bigint }) => s.id);
+        await tx.numeros_sorteo.updateMany({ where: { id: { in: ids } }, data: { estado: 'reservado', orden_id: orden.id } });
+        console.log('[Payphone INIT] Números reservados exitosamente:', ids.length);
+      });
+    } catch (e) {
+      console.error('[Payphone INIT] Error en transacción de reserva:', e);
+      throw e;
+    }
 
     const clientTxnId = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + (Number(process.env.PAYPHONE_TIMEOUT_MIN || 10) * 60 * 1000));
+    console.log('[Payphone INIT] Creando registro de pago Payphone:', { clientTxnId, expiresAt });
+    
     await (prisma as any).pagos_payphone.create({ 
       data: { 
         orden_id: orden.id, 
@@ -157,8 +205,10 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
         expires_at: expiresAt 
       } 
     });
+    console.log('[Payphone INIT] Registro de pago Payphone creado');
 
     // Correo de orden recibida (Payphone)
+    console.log('[Payphone INIT] Enviando correo de orden recibida...');
     try {
       if (cliente?.correo_electronico) {
         const { sendMail } = await import('../utils/mailer');
@@ -175,13 +225,25 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
           year: new Date().getFullYear()
         });
         await sendMail({ to: cliente.correo_electronico, subject: `Orden recibida ${codigo}`, html });
+        console.log('[Payphone INIT] Correo de orden recibida enviado');
       }
-    } catch (e) { console.error('Error enviando correo orden recibida (Payphone):', e); }
+    } catch (e) { 
+      console.error('[Payphone INIT] Error enviando correo orden recibida:', e); 
+    }
 
     // --- CONFIGURACIÓN PARA LA CAJITA DE PAGOS DE PAYPHONE ---
+    console.log('[Payphone INIT] Iniciando configuración de cajita de pagos...');
     const token = process.env.PAYPHONE_TOKEN;
+    console.log('[Payphone INIT] Token disponible:', !!token);
+    console.log('[Payphone INIT] Variables de entorno relevantes:', {
+      PAYPHONE_TOKEN: !!process.env.PAYPHONE_TOKEN,
+      PAYPHONE_STORE_ID: process.env.PAYPHONE_STORE_ID || 'undefined',
+      FRONTEND_URL: process.env.FRONTEND_URL || 'undefined',
+      NODE_ENV: process.env.NODE_ENV
+    });
+    
     if (!token) {
-      console.error('❌ PAYPHONE_TOKEN no está configurado en las variables de entorno.');
+      console.error('[Payphone INIT] PAYPHONE_TOKEN no está configurado en las variables de entorno.');
       return res.status(500).json({ error: 'Error de configuración del servidor de pagos.' });
     }
 
@@ -189,6 +251,14 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
     const amountCents = Math.round(monto_total * 100);
     const amountWithoutTaxCents = Math.round(amountCents / 1.12); // Asumiendo 12% IVA
     const taxCents = amountCents - amountWithoutTaxCents;
+
+    console.log('[Payphone INIT] Cálculos de montos:', {
+      monto_total_original: monto_total,
+      amountCents,
+      amountWithoutTaxCents,
+      taxCents,
+      iva_percent: '12%'
+    });
 
     // Configuración para la Cajita de Pagos (según documentación oficial)
     const payphoneConfig = {
@@ -211,12 +281,17 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
       email: body.correo_electronico,
       documentId: body.cedula || undefined,
       identificationType: 1, // Cédula
-      // URLs de respuesta
-      responseUrl: `${process.env.FRONTEND_URL}/payphone/response`,
-      cancellationUrl: `${process.env.FRONTEND_URL}/sorteos/${body.sorteo_id}`
+      // URLs de respuesta - Webhook apunta al backend, cancelación al frontend
+      responseUrl: `https://castromotor.com.ec/api/checkout/payphone/webhook`,
+      cancellationUrl: `${process.env.FRONTEND_URL}/payphone/error`
     };
 
-    console.log('✅ [Payphone INIT] Configuración generada:', {
+    console.log('[Payphone INIT] Configuración final de Payphone:', {
+      ...payphoneConfig,
+      token: '***OCULTO***' // No logear el token por seguridad
+    });
+
+    console.log('[Payphone INIT] Configuración generada:', {
       orden_id: orden.id,
       codigo,
       clientTransactionId: clientTxnId,
@@ -225,30 +300,53 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
     });
 
     // Devolver configuración para la cajita de pagos
-    res.json({ 
+    const response = { 
       ok: true, 
       orden_id: orden.id,
       codigo,
       payphoneConfig
+    };
+    
+    console.log('[Payphone INIT] === RESPUESTA EXITOSA ===');
+    console.log('[Payphone INIT] Enviando respuesta:', {
+      ...response,
+      payphoneConfig: { ...response.payphoneConfig, token: '***OCULTO***' }
     });
+    
+    res.json(response);
 
   } catch (e) { 
-    console.error('❌ Error general en /payments/payphone/init:', e);
+    console.error('[Payphone INIT] === ERROR GENERAL ===');
+    console.error('[Payphone INIT] Error completo:', e);
+    console.error('[Payphone INIT] Stack trace:', (e as Error)?.stack);
     next(e); 
   }
 });
 
-// Receptor de respuesta de Payphone (GET - redirección desde cajita)
-publicRouter.get('/payphone/response', async (req: Request, res: Response, next: NextFunction) => {
+// Webhook de Payphone (POST - notificación del servidor de Payphone)
+publicRouter.post('/checkout/payphone/webhook', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    console.log('🔍 [Payphone Response] Parámetros recibidos:', req.query);
-    
-    const { id, clientTransactionId } = req.query as { id?: string; clientTransactionId?: string };
-    
+    console.log('[Payphone Webhook] === WEBHOOK RECIBIDO ===');
+    console.log('[Payphone Webhook] Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('[Payphone Webhook] Body completo:', JSON.stringify(req.body, null, 2));
+    console.log('[Payphone Webhook] Query params:', JSON.stringify(req.query, null, 2));
+
+    // Payphone puede enviar tanto en body como en query
+    const webhookData = { ...req.query, ...req.body };
+    console.log('[Payphone Webhook] Datos combinados:', webhookData);
+
+    const { id, clientTransactionId, transactionStatus } = webhookData as { 
+      id?: string; 
+      clientTransactionId?: string; 
+      transactionStatus?: string; 
+    };
+
     if (!id || !clientTransactionId) {
-      console.log('❌ [Payphone Response] Parámetros faltantes');
-      return res.redirect(`${process.env.FRONTEND_URL}/?error=payphone_params_missing`);
+      console.log('[Payphone Webhook] Parámetros faltantes:', { id, clientTransactionId });
+      return res.status(400).json({ error: 'Parámetros faltantes' });
     }
+
+    console.log('[Payphone Webhook] Procesando:', { id, clientTransactionId, transactionStatus });
 
     // Buscar el pago en nuestra base de datos
     const pago: any = await (prisma as any).pagos_payphone.findUnique({ 
@@ -257,15 +355,27 @@ publicRouter.get('/payphone/response', async (req: Request, res: Response, next:
     });
     
     if (!pago) {
-      console.log('❌ [Payphone Response] Pago no encontrado:', clientTransactionId);
-      return res.redirect(`${process.env.FRONTEND_URL}/?error=payphone_payment_not_found`);
+      console.log('[Payphone Webhook] Pago no encontrado:', clientTransactionId);
+      return res.status(404).json({ error: 'Pago no encontrado' });
     }
 
-    // Confirmar con la API de Payphone
+    console.log('[Payphone Webhook] Pago encontrado:', { 
+      id: pago.id, 
+      orden_id: pago.orden_id, 
+      status: pago.status 
+    });
+
+    // Si ya fue procesado, no hacer nada
+    if (pago.status === 'APPROVED' || pago.status === 'REJECTED') {
+      console.log('[Payphone Webhook] Pago ya procesado:', pago.status);
+      return res.json({ ok: true, message: 'Ya procesado' });
+    }
+
+    // Confirmar con la API de Payphone para verificar el estado real
     const token = process.env.PAYPHONE_TOKEN;
     const confirmUrl = 'https://pay.payphonetodoesposible.com/api/button/V2/Confirm';
     
-    console.log('🔍 [Payphone Response] Confirmando transacción con Payphone API');
+    console.log('[Payphone Webhook] Confirmando con API de Payphone...');
     
     try {
       const confirmResponse = await fetch(confirmUrl, {
@@ -281,7 +391,103 @@ publicRouter.get('/payphone/response', async (req: Request, res: Response, next:
       });
 
       const confirmData = await confirmResponse.json();
-      console.log('🔍 [Payphone Response] Respuesta de confirmación:', confirmData);
+      console.log('[Payphone Webhook] Respuesta de confirmación:', confirmData);
+
+      // Type assertion for confirmData
+      const confirmDataTyped = confirmData as { transactionStatus?: string; [key: string]: any };
+
+      if (confirmResponse.ok && confirmDataTyped.transactionStatus === 'Approved') {
+        // Pago aprobado - procesar como orden aprobada
+        console.log('[Payphone Webhook] Pago APROBADO, procesando orden...');
+        await procesarPagoAprobado(pago, confirmDataTyped);
+        
+        // Actualizar estado del pago
+        await (prisma as any).pagos_payphone.update({ 
+          where: { id: pago.id }, 
+          data: { 
+            status: 'APPROVED',
+            payphone_response: confirmDataTyped,
+            processed_at: new Date()
+          } 
+        });
+
+        console.log('[Payphone Webhook] Orden procesada exitosamente');
+        return res.json({ ok: true, message: 'Pago procesado' });
+        
+      } else {
+        // Pago no aprobado - liberar reservas
+        console.log('[Payphone Webhook] Pago NO APROBADO:', confirmDataTyped);
+        await liberarReservas(pago.orden_id);
+        
+        // Actualizar estado del pago
+        await (prisma as any).pagos_payphone.update({ 
+          where: { id: pago.id }, 
+          data: { 
+            status: 'REJECTED',
+            payphone_response: confirmDataTyped,
+            processed_at: new Date()
+          } 
+        });
+
+        return res.json({ ok: true, message: 'Pago rechazado' });
+      }
+    } catch (confirmError) {
+      console.error('[Payphone Webhook] Error confirmando con API:', confirmError);
+      return res.status(500).json({ error: 'Error confirmando pago' });
+    }
+
+  } catch (e) { 
+    console.error('[Payphone Webhook] === ERROR GENERAL ===');
+    console.error('[Payphone Webhook] Error completo:', e);
+    console.error('[Payphone Webhook] Stack trace:', (e as Error)?.stack);
+    return res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// Receptor de respuesta de Payphone (GET - redirección desde cajita)
+publicRouter.get('/payphone/response', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    console.log('[Payphone Response] Parámetros recibidos:', req.query);
+    
+    const { id, clientTransactionId } = req.query as { id?: string; clientTransactionId?: string };
+    
+    if (!id || !clientTransactionId) {
+      console.log('[Payphone Response] Parámetros faltantes');
+      return res.redirect(`${process.env.FRONTEND_URL}/?error=payphone_params_missing`);
+    }
+
+    // Buscar el pago en nuestra base de datos
+    const pago: any = await (prisma as any).pagos_payphone.findUnique({ 
+      where: { client_txn_id: clientTransactionId },
+      include: { orden: true }
+    });
+    
+    if (!pago) {
+      console.log('[Payphone Response] Pago no encontrado:', clientTransactionId);
+      return res.redirect(`${process.env.FRONTEND_URL}/?error=payphone_payment_not_found`);
+    }
+
+    // Confirmar con la API de Payphone
+    const token = process.env.PAYPHONE_TOKEN;
+    const confirmUrl = 'https://pay.payphonetodoesposible.com/api/button/V2/Confirm';
+    
+    console.log('[Payphone Response] Confirmando transacción con Payphone API');
+    
+    try {
+      const confirmResponse = await fetch(confirmUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: parseInt(id),
+          clientTxId: clientTransactionId
+        }),
+      });
+
+      const confirmData = await confirmResponse.json();
+      console.log('[Payphone Response] Respuesta de confirmación:', confirmData);
 
       // Type assertion for confirmData
       const confirmDataTyped = confirmData as { transactionStatus?: string; [key: string]: any };
@@ -296,16 +502,16 @@ publicRouter.get('/payphone/response', async (req: Request, res: Response, next:
         // Pago no aprobado - liberar reservas
         await liberarReservas(pago.orden_id);
         
-        console.log('❌ [Payphone Response] Pago no aprobado:', confirmDataTyped);
+        console.log('[Payphone Response] Pago no aprobado:', confirmDataTyped);
         return res.redirect(`${process.env.FRONTEND_URL}/payphone/error?reason=payment_declined&orden=${pago.orden.codigo}`);
       }
     } catch (apiError: any) {
-      console.error('❌ [Payphone Response] Error llamando API confirm:', apiError);
+      console.error('[Payphone Response] Error llamando API confirm:', apiError);
       return res.redirect(`${process.env.FRONTEND_URL}/payphone/error?reason=api_error&orden=${pago.orden.codigo}`);
     }
 
   } catch (e) {
-    console.error('❌ Error en respuesta Payphone:', e);
+    console.error('[Payphone Response] Error en respuesta Payphone:', e);
     return res.redirect(`${process.env.FRONTEND_URL}/?error=payphone_response_error`);
   }
 });
@@ -481,25 +687,25 @@ async function enviarCorreoAprobacion(ordenId: bigint) {
       }
     }
   } catch (emailError) {
-    console.error('⚠️ Error enviando correo de aprobación:', emailError);
+    console.error('[ERROR] Error enviando correo de aprobación:', emailError);
   }
 }
 
 // Confirmación Payphone: cierra orden
 publicRouter.post('/payments/payphone/confirm', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    console.log('🔍 Payphone confirm request received:', { body: req.body, query: req.query });
+    console.log('[DEBUG] Payphone confirm request received:', { body: req.body, query: req.query });
     
     const { clientTransactionId } = z.object({ clientTransactionId: z.string().min(8) }).parse(req.body);
-    console.log('🔍 Client Transaction ID:', clientTransactionId);
+    console.log('[DEBUG] Client Transaction ID:', clientTransactionId);
     
     const pago: any = await (prisma as any).pagos_payphone.findUnique({ where: { client_txn_id: clientTransactionId } });
     if (!pago) {
-      console.log('❌ Transacción no encontrada en BD:', clientTransactionId);
+      console.log('[ERROR] Transacción no encontrada en BD:', clientTransactionId);
       return res.status(404).json({ error: 'Transacción no encontrada' });
     }
     
-    console.log('🔍 Pago encontrado:', { id: pago.id, status: pago.status, orden_id: pago.orden_id });
+    console.log('[DEBUG] Pago encontrado:', { id: pago.id, status: pago.status, orden_id: pago.orden_id });
 
     // Idempotencia: si ya aprobado, regresar
     if (pago.status === 'APPROVED') {
