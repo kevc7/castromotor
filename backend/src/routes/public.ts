@@ -256,11 +256,13 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
 publicRouter.get('/payphone/response', async (req: Request, res: Response, next: NextFunction) => {
   try {
     console.log('🔍 [Payphone Response] Parámetros recibidos:', req.query);
-    
-    const { id, clientTransactionId } = req.query as { id?: string; clientTransactionId?: string };
-    
+
+    const q: any = req.query || {};
+    const clientTransactionId = q.clientTransactionId || q.clientTxId || q.clientTxID || q.clientTxid;
+    const id = q.id || q.transactionId;
+
     if (!id || !clientTransactionId) {
-      console.log('❌ [Payphone Response] Parámetros faltantes');
+      console.log('❌ [Payphone Response] Parámetros faltantes (id o clientTx)');
       return res.redirect(`${process.env.FRONTEND_URL}/?error=payphone_params_missing`);
     }
 
@@ -321,6 +323,100 @@ publicRouter.get('/payphone/response', async (req: Request, res: Response, next:
   } catch (e) {
     console.error('❌ Error en respuesta Payphone:', e);
     return res.redirect(`${process.env.FRONTEND_URL}/?error=payphone_response_error`);
+  }
+});
+
+// Webhook Payphone (POST) - para compatibilidad si Payphone envía notificaciones server->server
+// Documentación usual envía campos: id (int), clientTxId (string) / transactionStatus, amount, etc.
+// Asegura idempotencia buscando pago existente y su estado.
+publicRouter.post('/payphone/webhook', async (req: Request, res: Response) => {
+  console.log('🛰️  [Payphone Webhook] Payload recibido:', req.body);
+  try {
+    const schema = z.object({
+      id: z.number().int().optional(),          // id transacción Payphone
+      transactionId: z.number().int().optional(),
+      clientTxId: z.string().min(5),            // nuestro UUID
+      transactionStatus: z.string().optional(),
+      status: z.string().optional(),            // a veces usan 'status'
+      amount: z.number().optional(),
+    });
+    const data = schema.parse(req.body);
+
+    const clientTx = data.clientTxId;
+    const pago: any = await (prisma as any).pagos_payphone.findUnique({ where: { client_txn_id: clientTx }, include: { orden: true } });
+    if (!pago) {
+      console.warn('⚠️  [Payphone Webhook] Pago no encontrado para clientTxId', clientTx);
+      return res.status(404).json({ ok: false, error: 'Pago no encontrado' });
+    }
+    if (pago.status === 'APPROVED') {
+      console.log('ℹ️  [Payphone Webhook] Pago ya aprobado (idempotente)');
+      return res.json({ ok: true, alreadyApproved: true });
+    }
+
+    // Confirmar con API oficial si aún no tenemos certeza de estado
+    const token = process.env.PAYPHONE_TOKEN;
+    if (!token) return res.status(500).json({ ok: false, error: 'Config token faltante' });
+
+    let confirmResult: any = null;
+    try {
+      const confirmUrl = 'https://pay.payphonetodoesposible.com/api/button/V2/Confirm';
+      const resp = await fetch(confirmUrl, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: data.id ?? data.transactionId, clientTxId: clientTx })
+      });
+      const txt = await resp.text();
+      try { confirmResult = JSON.parse(txt); } catch { confirmResult = { raw: txt }; }
+      console.log('🔎 [Payphone Webhook] Respuesta confirmación:', confirmResult);
+      if (!resp.ok) {
+        return res.status(502).json({ ok: false, error: 'Fallo confirmación', details: confirmResult });
+      }
+    } catch (err) {
+      console.error('❌ [Payphone Webhook] Error confirmando con Payphone:', err);
+      return res.status(500).json({ ok: false, error: 'Error confirmación' });
+    }
+
+    const statusNorm = (confirmResult?.transactionStatus || confirmResult?.status || '').toLowerCase();
+    if (statusNorm === 'approved') {
+      await procesarPagoAprobado(pago, confirmResult);
+      return res.json({ ok: true, approved: true });
+    } else if (['rejected','canceled','cancelled','failed'].includes(statusNorm)) {
+      await liberarReservas(pago.orden_id);
+      await (prisma as any).pagos_payphone.update({ where: { id: pago.id }, data: { status: statusNorm.toUpperCase(), raw: confirmResult } });
+      return res.json({ ok: true, approved: false, status: statusNorm });
+    } else {
+      console.log('ℹ️  [Payphone Webhook] Estado no final:', statusNorm);
+      return res.json({ ok: true, pending: true, status: statusNorm });
+    }
+  } catch (e) {
+    console.error('❌ [Payphone Webhook] Error procesando payload:', e);
+    return res.status(400).json({ ok: false, error: e instanceof Error ? e.message : 'Error' });
+  }
+});
+
+// Ruta legacy que podría estar configurada externamente
+publicRouter.post('/checkout/payphone/webhook', async (req: Request, res: Response) => {
+  console.log('🛰️  [Legacy Webhook] Redirigiendo a /payphone/webhook');
+  // Reutilizamos la lógica anterior llamando internamente
+  (req as any).url = '/payphone/webhook';
+  (publicRouter as any).handle(req, res, () => { res.status(500).json({ ok: false, error: 'Fallback interno falló' }); });
+});
+
+// Legacy GET redirect (Payphone puede redirigir al endpoint viejo con query params ?id= & clientTransactionId= )
+publicRouter.get('/checkout/payphone/webhook', async (req: Request, res: Response) => {
+  try {
+    console.log('🛰️  [Legacy GET Redirect] Reenviando a /payphone/response con query:', req.query);
+    // Preservar query string al reenviar internamente
+    const originalQsIndex = req.originalUrl.indexOf('?');
+    const qs = originalQsIndex >= 0 ? req.originalUrl.substring(originalQsIndex) : '';
+    (req as any).url = '/payphone/response' + qs; // reutiliza el handler existente
+  (publicRouter as any).handle(req, res, () => {
+      console.error('❌ [Legacy GET Redirect] Fallback interno falló');
+      res.redirect(`${process.env.FRONTEND_URL}/payphone/error?reason=legacy_forward_error`);
+    });
+  } catch (e) {
+    console.error('❌ [Legacy GET Redirect] Error reenviando:', e);
+    res.redirect(`${process.env.FRONTEND_URL}/payphone/error?reason=legacy_exception`);
   }
 });
 
