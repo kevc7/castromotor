@@ -1,3 +1,6 @@
+
+// ...existing code...
+
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod";
 import path from "node:path";
@@ -7,6 +10,35 @@ import { prisma } from "../db";
 import crypto from 'node:crypto';
 
 export const publicRouter = Router();
+
+// Cancelar orden y liberar reservas (Payphone cancelado por usuario)
+publicRouter.post('/orders/:id/cancel', async (req, res) => {
+  try {
+    const ordenId = BigInt(req.params.id);
+    const orden = await prisma.ordenes.findUnique({ where: { id: ordenId }, include: { cliente: true } });
+    if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
+    if (orden.estado_pago === 'aprobado' || orden.estado_pago === 'cancelado') {
+      return res.status(400).json({ error: 'No se puede cancelar una orden ya aprobada o cancelada' });
+    }
+    // Liberar reservas
+    await prisma.numeros_sorteo.updateMany({ where: { orden_id: ordenId, estado: 'reservado' }, data: { estado: 'disponible', orden_id: null } });
+    // Marcar orden como cancelada
+    await prisma.ordenes.update({ where: { id: ordenId }, data: { estado_pago: 'cancelado' } });
+    // Enviar correo de cancelación (motivo solo en el correo)
+    try {
+      if (orden.cliente?.correo_electronico) {
+        const { sendMail } = await import('../utils/mailer');
+        const motivo = 'Pago cancelado por usuario';
+        const html = `<p>Tu orden <b>${orden.codigo}</b> fue cancelada.<br>Motivo: ${motivo}.</p>`;
+        await sendMail({ to: orden.cliente.correo_electronico, subject: `Orden cancelada ${orden.codigo}`, html });
+      }
+    } catch (e) { console.error('Error correo cancelación:', e); }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Error cancelando orden:', e);
+    res.status(500).json({ error: 'Error cancelando orden' });
+  }
+});
 // Endpoint público para crear un admin inicial (solo para bootstrap local).
 // En producción, elimínalo o protégelo con una secret de entorno.
 publicRouter.post('/bootstrap/admin', async (req: Request, res: Response, next: NextFunction) => {
@@ -305,19 +337,20 @@ publicRouter.get('/payphone/response', async (req: Request, res: Response, next:
       if (confirmResponse.ok && confirmDataTyped.transactionStatus === 'Approved') {
         // Pago aprobado - procesar como orden aprobada
         await procesarPagoAprobado(pago, confirmDataTyped);
-        
-        // Redirigir a página de éxito
-        return res.redirect(`${process.env.FRONTEND_URL}/payphone/success?orden=${pago.orden.codigo}&clientTxnId=${clientTransactionId}`);
+        const sorteoId = (pago.orden as any).sorteo_id;
+        // Redirigir a checkout paso 3 (resultado)
+        return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_ok&orden=${pago.orden.codigo}&ordenId=${pago.orden.id}`);
       } else {
         // Pago no aprobado - liberar reservas
         await liberarReservas(pago.orden_id);
-        
+        const sorteoId = (pago.orden as any).sorteo_id;
         console.log('❌ [Payphone Response] Pago no aprobado:', confirmDataTyped);
-        return res.redirect(`${process.env.FRONTEND_URL}/payphone/error?reason=payment_declined&orden=${pago.orden.codigo}`);
+        return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_fail&orden=${pago.orden.codigo}&reason=payment_declined`);
       }
     } catch (apiError: any) {
       console.error('❌ [Payphone Response] Error llamando API confirm:', apiError);
-      return res.redirect(`${process.env.FRONTEND_URL}/payphone/error?reason=api_error&orden=${pago.orden.codigo}`);
+      const sorteoId = (pago.orden as any).sorteo_id;
+      return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_fail&orden=${pago.orden.codigo}&reason=api_error`);
     }
 
   } catch (e) {

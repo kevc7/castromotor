@@ -212,7 +212,7 @@ export default function SorteoInfoPage() {
                 />
               </label>
               <button
-                onClick={() => router.push(`/sorteos/${id}?cantidad=${cantidadPref}`)}
+                onClick={() => router.push(`/checkout/${id}?cantidad=${cantidadPref}`)}
                 disabled={Boolean(cantidadMsg)}
                 className={`px-5 py-2 rounded-md text-white font-medium tracking-wide shadow-md transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#0f1725] focus:ring-rose-500 ${cantidadMsg ? 'bg-rose-900/50 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-500 active:scale-[.97]'}`}
               >
@@ -254,7 +254,7 @@ export default function SorteoInfoPage() {
                           <span className="badge-save">Ahorra {ahorroPct}%</span>
                         </div>
                         <div className="text-xs text-slate-400 line-through mt-0.5">${original.toFixed(2)}</div>
-                        <button onClick={() => router.push(`/sorteos/${id}?paqueteId=${p.id}`)} className="mt-4 w-full px-3 py-2 btn-cta text-sm">Comprar</button>
+                        <button onClick={() => router.push(`/checkout/${id}?paqueteId=${p.id}`)} className="mt-4 w-full px-3 py-2 btn-cta text-sm">Comprar</button>
                       </div>
                     );
                   })}
