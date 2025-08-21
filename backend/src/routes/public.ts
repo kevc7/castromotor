@@ -1100,6 +1100,158 @@ publicRouter.get('/payments/payphone/token-check', async (_req: Request, res: Re
   }
 });
 
+// Endpoint para diagnóstico profundo de conectividad
+publicRouter.get('/payments/payphone/connectivity-check', async (_req: Request, res: Response) => {
+  try {
+    const results: Record<string, any> = {
+      tests: {},
+      system: {
+        nodeVersion: process.version,
+        platform: process.platform,
+        arch: process.arch,
+        env: {
+          hasHttpProxy: !!process.env.http_proxy || !!process.env.HTTP_PROXY,
+          hasHttpsProxy: !!process.env.https_proxy || !!process.env.HTTPS_PROXY,
+          payphone: {
+            baseUrl: PAYPHONE_BASE_URL,
+            hasStoreId: !!process.env.PAYPHONE_STORE_ID,
+            hasClientId: !!process.env.PAYPHONE_CLIENT_ID,
+            hasClientSecret: !!process.env.PAYPHONE_CLIENT_SECRET,
+            hasStaticToken: !!process.env.PAYPHONE_TOKEN
+          }
+        }
+      }
+    };
+    
+    // Test 1: Basic HTTPS request to Google (verify general connectivity)
+    try {
+      console.log('🔍 Prueba conectividad a Google...');
+      const googleResp = await fetch('https://www.google.com/robots.txt', { 
+        method: 'GET',
+        headers: { 'User-Agent': 'PayphoneConnectivityTest/1.0' }
+      });
+      results.tests.google = {
+        ok: googleResp.ok,
+        status: googleResp.status,
+        statusText: googleResp.statusText
+      };
+    } catch (e: any) {
+      results.tests.google = {
+        ok: false,
+        error: e.message || String(e),
+        type: e.name || 'Unknown',
+        code: e.code
+      };
+    }
+    
+    // Test 2: DNS lookup (using fetch to domain with invalid path)
+    try {
+      console.log('🔍 Prueba DNS para Payphone...');
+      const dnsTestResp = await fetch(`${PAYPHONE_BASE_URL}/dns-test-${Date.now()}`, { 
+        method: 'GET',
+        headers: { 'User-Agent': 'PayphoneConnectivityTest/1.0' }
+      });
+      results.tests.dns = {
+        ok: true, // Si llegamos aquí, el DNS resolvió
+        status: dnsTestResp.status,
+        statusText: dnsTestResp.statusText
+      };
+    } catch (e: any) {
+      results.tests.dns = {
+        ok: false,
+        error: e.message || String(e),
+        type: e.name || 'Unknown',
+        code: e.code,
+        // Diferenciamos entre error DNS vs. otros errores
+        isDnsError: e.message?.includes('getaddrinfo') || e.message?.includes('ENOTFOUND')
+      };
+    }
+    
+    // Test 3: Conexión básica a Payphone (robots.txt o similar)
+    try {
+      console.log('🔍 Prueba conectividad básica a Payphone...');
+      const baseResp = await fetch(`${PAYPHONE_BASE_URL}/robots.txt`, { 
+        method: 'GET',
+        headers: { 'User-Agent': 'PayphoneConnectivityTest/1.0' }
+      });
+      results.tests.payphone = {
+        ok: baseResp.ok,
+        status: baseResp.status,
+        statusText: baseResp.statusText
+      };
+    } catch (e: any) {
+      results.tests.payphone = {
+        ok: false,
+        error: e.message || String(e),
+        type: e.name || 'Unknown',
+        code: e.code
+      };
+    }
+    
+    // Test 4: Intento GetToken directo (API)
+    try {
+      console.log('🔍 Prueba API GetToken...');
+      const clientId = process.env.PAYPHONE_CLIENT_ID;
+      const clientSecret = process.env.PAYPHONE_CLIENT_SECRET;
+      
+      if (!clientId || !clientSecret) {
+        results.tests.getToken = {
+          ok: false,
+          error: 'Faltan credenciales CLIENT_ID/SECRET'
+        };
+      } else {
+        const url = `${PAYPHONE_BASE_URL}/api/GetToken`;
+        const getTokenResp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clientId, clientSecret })
+        });
+        
+        const text = await getTokenResp.text();
+        results.tests.getToken = {
+          ok: getTokenResp.ok,
+          status: getTokenResp.status,
+          statusText: getTokenResp.statusText,
+          response: text.substring(0, 200) // Limitar por seguridad
+        };
+      }
+    } catch (e: any) {
+      results.tests.getToken = {
+        ok: false,
+        error: e.message || String(e),
+        type: e.name || 'Unknown',
+        code: e.code
+      };
+    }
+    
+    // Diagnóstico final
+    let diagnosis = 'unknown';
+    if (!results.tests.google.ok) {
+      diagnosis = 'no_internet';
+    } else if (!results.tests.dns.ok && results.tests.dns.isDnsError) {
+      diagnosis = 'dns_failure';
+    } else if (!results.tests.payphone.ok) {
+      diagnosis = 'payphone_connection_error';
+    } else if (!results.tests.getToken.ok) {
+      diagnosis = 'api_error';
+    } else {
+      diagnosis = 'seems_ok';
+    }
+    
+    results.diagnosis = diagnosis;
+    
+    console.log('✅ Diagnóstico completado:', diagnosis);
+    return res.json(results);
+    
+  } catch (e) {
+    console.error('❌ Error en prueba de conectividad:', e);
+    return res.status(500).json({
+      ok: false,
+      error: e instanceof Error ? e.message : String(e)
+    });
+  }
+});
+
 // Cancelar orden (usuario cierra o cancela el flujo antes de completar Payphone o decide abortar)
 publicRouter.post('/orders/:id/cancel', async (req: Request, res: Response) => {
   try {
