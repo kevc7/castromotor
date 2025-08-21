@@ -8,6 +8,7 @@ import fs from "node:fs";
 import multer from "multer";
 import { prisma } from "../db";
 import crypto from 'node:crypto';
+import { Agent } from 'undici';
 
 /**
  * Obtiene el token Payphone estático desde las variables de entorno
@@ -25,12 +26,28 @@ async function getPayphoneToken(): Promise<string> {
 const PAYPHONE_BASE_URL = process.env.PAYPHONE_BASE_URL || 'https://pay.payphonetodoesposible.com';
 console.log('🔧 PAYPHONE_BASE_URL activo:', PAYPHONE_BASE_URL);
 
+// Dispatcher de undici para conexiones salientes a Payphone (forzar IPv4 en VPS si hay problemas con IPv6)
+const PAYPHONE_FORCE_IPV4 = String(process.env.PAYPHONE_FORCE_IPV4 || 'true').toLowerCase() === 'true';
+const payphoneDispatcher = new Agent({
+  connect: {
+    // Al forzar IPv4 evitamos errores típicos de redes/IPv6 en algunos VPS
+    family: PAYPHONE_FORCE_IPV4 ? 4 : undefined,
+    timeout: 10_000,
+  },
+  keepAliveTimeout: 10_000,
+});
+
 export const publicRouter = Router();
 
 // Helper: confirm Payphone transaction with multiple strategies and better diagnostics
 async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; id?: number; clientTx: string; loggerPrefix: string; }): Promise<{ approved: boolean; pending: boolean; terminal: boolean; statusNorm: string; data: any; source: string; htmlBody?: boolean; attempts: any[]; }> {
   const attempts: any[] = [];
-  const headers = { 'Authorization': `Bearer ${opts.token}`, 'Content-Type': 'application/json' } as any;
+  const headers = {
+    'Authorization': `Bearer ${opts.token}`,
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'User-Agent': 'Castromotor-Server/1.0 (+https://castromotor.com.ec)'
+  } as any;
   type FetchResp = any; // evitar conflicto con tipo Response de Express
   const recordAttempt = (label: string, resp: FetchResp | null, raw: string | null, parsed: any, error?: any) => {
     attempts.push({ label, status: resp?.status, ok: !!resp?.ok, rawSnippet: raw ? raw.slice(0,180) : null, parsedKeys: parsed && typeof parsed === 'object' ? Object.keys(parsed) : null, error: error ? (error.message || String(error)) : undefined });
@@ -39,8 +56,8 @@ async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; i
   // Strategy A: button/V2/Confirm with clientTxId
   try {
     const body = JSON.stringify({ id: opts.id, clientTxId: opts.clientTx });
-  const url = `${PAYPHONE_BASE_URL}/api/button/V2/Confirm`;
-    const resp = await fetch(url, { method: 'POST', headers, body });
+    const url = `${PAYPHONE_BASE_URL}/api/button/V2/Confirm`;
+    const resp = await fetch(url, { method: 'POST', headers, body, dispatcher: payphoneDispatcher });
     const raw = await resp.text();
     const parsed = decode(raw);
     recordAttempt('button:clientTxId', resp, raw, parsed);
@@ -54,7 +71,7 @@ async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; i
   try {
     const body = JSON.stringify({ id: opts.id, clientTransactionId: opts.clientTx });
   const url = `${PAYPHONE_BASE_URL}/api/button/V2/Confirm`;
-    const resp = await fetch(url, { method: 'POST', headers, body });
+  const resp = await fetch(url, { method: 'POST', headers, body, dispatcher: payphoneDispatcher });
     const raw = await resp.text();
     const parsed = decode(raw);
     recordAttempt('button:clientTransactionId', resp, raw, parsed);
@@ -68,7 +85,7 @@ async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; i
     try {
       const body = JSON.stringify({ storeId: opts.storeId, clientTransactionId: opts.clientTx });
   const url = `${PAYPHONE_BASE_URL}/api/Sale/Confirm`;
-      const resp = await fetch(url, { method: 'POST', headers, body });
+  const resp = await fetch(url, { method: 'POST', headers, body, dispatcher: payphoneDispatcher });
       const raw = await resp.text();
       const parsed = decode(raw);
       recordAttempt('sale:clientTransactionId', resp, raw, parsed);
