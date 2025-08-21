@@ -9,6 +9,13 @@ import multer from "multer";
 import { prisma } from "../db";
 import crypto from 'node:crypto';
 
+// Base URL configurable para Payphone (sandbox o producción) vía .env
+// Ejemplos:
+//   PAYPHONE_BASE_URL=https://sandbox.payphonetodoesposible.com   (pruebas)
+//   PAYPHONE_BASE_URL=https://pay.payphonetodoesposible.com       (producción)
+const PAYPHONE_BASE_URL = process.env.PAYPHONE_BASE_URL || 'https://pay.payphonetodoesposible.com';
+console.log('🔧 PAYPHONE_BASE_URL activo:', PAYPHONE_BASE_URL);
+
 export const publicRouter = Router();
 
 // Helper: confirm Payphone transaction with multiple strategies and better diagnostics
@@ -23,7 +30,7 @@ async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; i
   // Strategy A: button/V2/Confirm with clientTxId
   try {
     const body = JSON.stringify({ id: opts.id, clientTxId: opts.clientTx });
-    const url = 'https://pay.payphonetodoesposible.com/api/button/V2/Confirm';
+  const url = `${PAYPHONE_BASE_URL}/api/button/V2/Confirm`;
     const resp = await fetch(url, { method: 'POST', headers, body });
     const raw = await resp.text();
     const parsed = decode(raw);
@@ -37,7 +44,7 @@ async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; i
   // Strategy B: button/V2/Confirm with clientTransactionId (alternative naming)
   try {
     const body = JSON.stringify({ id: opts.id, clientTransactionId: opts.clientTx });
-    const url = 'https://pay.payphonetodoesposible.com/api/button/V2/Confirm';
+  const url = `${PAYPHONE_BASE_URL}/api/button/V2/Confirm`;
     const resp = await fetch(url, { method: 'POST', headers, body });
     const raw = await resp.text();
     const parsed = decode(raw);
@@ -51,7 +58,7 @@ async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; i
   if (opts.storeId) {
     try {
       const body = JSON.stringify({ storeId: opts.storeId, clientTransactionId: opts.clientTx });
-      const url = 'https://pay.payphonetodoesposible.com/api/Sale/Confirm';
+  const url = `${PAYPHONE_BASE_URL}/api/Sale/Confirm`;
       const resp = await fetch(url, { method: 'POST', headers, body });
       const raw = await resp.text();
       const parsed = decode(raw);
@@ -63,8 +70,21 @@ async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; i
     } catch (e:any) { recordAttempt('sale:clientTransactionId', null, null, null, e); }
   }
   // Unknown situation
-  const finalStatus = attempts.find(a => a.status) ? 'unknown' : 'no_response';
-  return { approved: false, pending: false, terminal: true, statusNorm: finalStatus, data: { attempts }, source: 'none', htmlBody: false, attempts };
+  // Clasificación adicional para diagnósticos cuando no se obtuvo estado claro
+  const anyResp = attempts.some(a => typeof a.status === 'number');
+  const htmlBody = attempts.some(a => a.rawSnippet && a.rawSnippet.trim().startsWith('<'));
+  const authErr = attempts.some(a => a.status === 401 || a.status === 403);
+  const notFound = attempts.some(a => a.status === 404);
+  const serverErr = attempts.some(a => a.status && a.status >= 500);
+  const networkErr = attempts.some(a => a.error && /(ENOTFOUND|ECONNREFUSED|EAI_AGAIN|ECONNRESET|ETIMEDOUT)/i.test(a.error));
+  let classified = !anyResp ? 'no_response' : 'unknown';
+  if (authErr) classified = 'auth_error';
+  else if (networkErr) classified = 'network_error';
+  else if (htmlBody) classified = 'html_error';
+  else if (notFound) classified = 'endpoint_not_found';
+  else if (serverErr) classified = 'remote_5xx';
+  const data = { attempts, classified };
+  return { approved: false, pending: false, terminal: true, statusNorm: classified, data, source: 'none', htmlBody, attempts };
 }
 // Endpoint público para crear un admin inicial (solo para bootstrap local).
 // En producción, elimínalo o protégelo con una secret de entorno.
@@ -364,7 +384,9 @@ publicRouter.get('/payphone/response', async (req: Request, res: Response, next:
       await liberarReservas(pago.orden_id);
     }
     const sorteoId = (pago.orden as any).sorteo_id;
-    return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_fail&orden=${pago.orden.codigo}&reason=${encodeURIComponent(confirm.statusNorm)}`);
+  // Guardar raw diagnóstico en pago para soporte
+  try { await (prisma as any).pagos_payphone.update({ where: { id: pago.id }, data: { status: confirm.statusNorm.toUpperCase(), raw: confirm.data } }); } catch {}
+  return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_fail&orden=${pago.orden.codigo}&reason=${encodeURIComponent(confirm.statusNorm)}`);
 
   } catch (e) {
     console.error('❌ Error en respuesta Payphone:', e);
@@ -671,7 +693,7 @@ publicRouter.post('/payments/payphone/confirm', async (req: Request, res: Respon
         return res.status(500).json({ error: 'Payphone no configurado', details: { hasToken: !!token, hasStoreId: !!storeId } });
       }
       
-      const confirmUrl = 'https://pay.payphonetodoesposible.com/api/Sale/Confirm';
+  const confirmUrl = `${PAYPHONE_BASE_URL}/api/Sale/Confirm`;
       const requestBody = { storeId, clientTransactionId };
       
       console.log('🔍 Llamando a Payphone API:', { url: confirmUrl, body: requestBody });
@@ -906,7 +928,7 @@ publicRouter.post('/payments/payphone/debug', async (req: Request, res: Response
     
     // Probar conexión básica con Payphone
     try {
-      const testUrl = 'https://pay.payphonetodoesposible.com/api/Sale/Confirm';
+  const testUrl = `${PAYPHONE_BASE_URL}/api/Sale/Confirm`;
       const testBody = { 
         storeId, 
         clientTransactionId: 'DEBUG_TEST_' + Date.now() 
