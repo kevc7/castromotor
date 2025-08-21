@@ -8,7 +8,9 @@ import fs from "node:fs";
 import multer from "multer";
 import { prisma } from "../db";
 import crypto from 'node:crypto';
-import { Agent } from 'undici';
+import https from 'node:https';
+import http from 'node:http';
+import dns from 'node:dns';
 
 /**
  * Obtiene el token Payphone estático desde las variables de entorno
@@ -26,16 +28,45 @@ async function getPayphoneToken(): Promise<string> {
 const PAYPHONE_BASE_URL = process.env.PAYPHONE_BASE_URL || 'https://pay.payphonetodoesposible.com';
 console.log('🔧 PAYPHONE_BASE_URL activo:', PAYPHONE_BASE_URL);
 
-// Dispatcher de undici para conexiones salientes a Payphone (forzar IPv4 en VPS si hay problemas con IPv6)
+// Forzar IPv4 en VPS que presenten problemas con IPv6/TLS
 const PAYPHONE_FORCE_IPV4 = String(process.env.PAYPHONE_FORCE_IPV4 || 'true').toLowerCase() === 'true';
-const payphoneDispatcher = new Agent({
-  connect: {
-    // Al forzar IPv4 evitamos errores típicos de redes/IPv6 en algunos VPS
-    family: PAYPHONE_FORCE_IPV4 ? 4 : undefined,
-    timeout: 10_000,
-  },
-  keepAliveTimeout: 10_000,
-});
+// Nota: no usar el tipo 'typeof dns.lookup' porque exige __promisify__; para https.RequestOptions basta con esta firma
+const ipv4Lookup = (hostname: string, options: any, callback: any) => {
+  const opts = typeof options === 'function' ? {} : (options || {});
+  return dns.lookup(hostname, { ...opts, family: 4 }, callback);
+};
+
+// Helper: POST JSON con IPv4 forzado y timeout
+async function postJson(urlStr: string, headers: Record<string,string>, bodyStr: string, timeoutMs = 12_000): Promise<{ status: number; ok: boolean; text: string; }> {
+  const u = new URL(urlStr);
+  const isHttps = u.protocol === 'https:';
+  const options: https.RequestOptions = {
+    method: 'POST',
+    hostname: u.hostname,
+    port: u.port ? Number(u.port) : (isHttps ? 443 : 80),
+    path: `${u.pathname}${u.search}`,
+    headers,
+    // lookup permite forzar IPv4
+    lookup: PAYPHONE_FORCE_IPV4 ? (ipv4Lookup as any) : undefined,
+  };
+  return await new Promise((resolve, reject) => {
+    const req = (isHttps ? https : http).request(options, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (d) => chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        const status = res.statusCode || 0;
+        resolve({ status, ok: status >= 200 && status < 300, text });
+      });
+    });
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error('ETIMEDOUT'));
+    });
+    req.on('error', (err) => reject(err));
+    req.write(bodyStr);
+    req.end();
+  });
+}
 
 export const publicRouter = Router();
 
@@ -57,8 +88,8 @@ async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; i
   try {
     const body = JSON.stringify({ id: opts.id, clientTxId: opts.clientTx });
     const url = `${PAYPHONE_BASE_URL}/api/button/V2/Confirm`;
-    const resp = await fetch(url, { method: 'POST', headers, body, dispatcher: payphoneDispatcher });
-    const raw = await resp.text();
+    const resp = await postJson(url, headers, body);
+    const raw = resp.text;
     const parsed = decode(raw);
     recordAttempt('button:clientTxId', resp, raw, parsed);
     const statusNorm = String(parsed?.transactionStatus || parsed?.status || '').toLowerCase();
@@ -70,9 +101,9 @@ async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; i
   // Strategy B: button/V2/Confirm with clientTransactionId (alternative naming)
   try {
     const body = JSON.stringify({ id: opts.id, clientTransactionId: opts.clientTx });
-  const url = `${PAYPHONE_BASE_URL}/api/button/V2/Confirm`;
-  const resp = await fetch(url, { method: 'POST', headers, body, dispatcher: payphoneDispatcher });
-    const raw = await resp.text();
+    const url = `${PAYPHONE_BASE_URL}/api/button/V2/Confirm`;
+    const resp = await postJson(url, headers, body);
+    const raw = resp.text;
     const parsed = decode(raw);
     recordAttempt('button:clientTransactionId', resp, raw, parsed);
     const statusNorm = String(parsed?.transactionStatus || parsed?.status || '').toLowerCase();
@@ -84,9 +115,9 @@ async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; i
   if (opts.storeId) {
     try {
       const body = JSON.stringify({ storeId: opts.storeId, clientTransactionId: opts.clientTx });
-  const url = `${PAYPHONE_BASE_URL}/api/Sale/Confirm`;
-  const resp = await fetch(url, { method: 'POST', headers, body, dispatcher: payphoneDispatcher });
-      const raw = await resp.text();
+      const url = `${PAYPHONE_BASE_URL}/api/Sale/Confirm`;
+      const resp = await postJson(url, headers, body);
+      const raw = resp.text;
       const parsed = decode(raw);
       recordAttempt('sale:clientTransactionId', resp, raw, parsed);
       const statusNorm = String(parsed?.transactionStatus || parsed?.status || '').toLowerCase();
