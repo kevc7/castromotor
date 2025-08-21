@@ -55,6 +55,7 @@ export default function CheckoutPage() {
 
   // Resultado (Step 3)
   const [result, setResult] = useState<any>(null);
+  const [payphoneOrdenId, setPayphoneOrdenId] = useState<string | null>(null);
 
   // Feedback general
   const [alert, setAlert] = useState<{ type: 'error' | 'success' | 'info'; msg: string } | null>(null);
@@ -198,8 +199,9 @@ export default function CheckoutPage() {
       const r = await fetch(`${API_BASE}/api/payments/payphone/init`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
         nombres: cliente.nombres, apellidos: cliente.apellidos, cedula: cliente.cedula, correo_electronico: cliente.correo_electronico, telefono: cliente.telefono, direccion: cliente.direccion, sorteo_id: Number(sorteoId), paquete_id: paqueteSeleccionado ? Number(paqueteSeleccionado.id) : undefined, cantidad_numeros: paqueteSeleccionado ? undefined : Number(cantidad)
       })});
-      const d = await r.json();
-      if (!r.ok || !d.payphoneConfig) throw new Error(d?.error || 'No se pudo iniciar pago');
+  const d = await r.json();
+  if (!r.ok || !d.payphoneConfig) throw new Error(d?.error || 'No se pudo iniciar pago');
+  setPayphoneOrdenId(String(d.orden_id));
       setPayphoneMsg('Cargando cajita...');
       // Cargar SDK
       if (typeof window !== 'undefined') {
@@ -212,7 +214,21 @@ export default function CheckoutPage() {
         if ((window as any).PPaymentButtonBox) {
           const containerId = 'pp-box';
           let container = document.getElementById(containerId);
-          if (!container) { container = document.createElement('div'); container.id = containerId; document.body.appendChild(container); }
+          if (!container) { 
+            container = document.createElement('div'); 
+            container.id = containerId; 
+            container.style.position = 'fixed';
+            container.style.top = '0';
+            container.style.left = '0';
+            container.style.width = '100%';
+            container.style.height = '100%';
+            container.style.display = 'flex';
+            container.style.alignItems = 'center';
+            container.style.justifyContent = 'center';
+            container.style.background = 'rgba(0,0,0,0.72)';
+            container.style.zIndex = '9999';
+            document.body.appendChild(container); 
+          }
           const ppb = new (window as any).PPaymentButtonBox(d.payphoneConfig);
           ppb.render(containerId);
           setPayphoneMsg('✔ Cajita abierta. Completa el pago.');
@@ -222,6 +238,20 @@ export default function CheckoutPage() {
       setPayphoneMsg(null);
       setAlert({ type: 'error', msg: err?.message || 'Error Payphone' });
     } finally { setPayphoneLoading(false); }
+  }
+
+  async function cancelarPayphone() {
+    try {
+      if (!payphoneOrdenId) return;
+      const el = document.getElementById('pp-box');
+      if (el) el.remove();
+      const resp = await fetch(`${API_BASE}/api/orders/${payphoneOrdenId}/cancel`, { method: 'POST' });
+      if (!resp.ok) throw new Error('No se pudo cancelar');
+      setResult({ modo: 'payphone', estado: 'fallido', reason: 'cancelado_usuario' });
+      setStep(3);
+    } catch (e:any) {
+      setAlert({ type: 'error', msg: e?.message || 'Error cancelando' });
+    }
   }
 
   // UI helpers
@@ -244,13 +274,45 @@ export default function CheckoutPage() {
   const ordenCodigo = sp.get('orden');
   const ordenId = sp.get('ordenId');
   const reason = sp.get('reason');
+  const pendingClientTx = sp.get('clientTx');
   useEffect(() => {
     if (payResult && step !== 3) {
-      // Entrar directamente a resultado para Payphone
-      setResult(payResult === 'payphone_ok' ? { modo: 'payphone', estado: 'aprobado', codigo: ordenCodigo, ordenId } : { modo: 'payphone', estado: 'fallido', codigo: ordenCodigo, ordenId, reason });
-      setStep(3 as Step);
+      if (payResult === 'payphone_ok') {
+        setResult({ modo: 'payphone', estado: 'aprobado', codigo: ordenCodigo, ordenId });
+        setStep(3 as Step);
+      } else if (payResult === 'payphone_fail') {
+        setResult({ modo: 'payphone', estado: 'fallido', codigo: ordenCodigo, ordenId, reason });
+        setStep(3 as Step);
+      } else if (payResult === 'payphone_pending') {
+        // Mostrar pantalla intermedia de espera y comenzar polling
+        setResult({ modo: 'payphone', estado: 'pendiente', codigo: ordenCodigo, ordenId, clientTx: pendingClientTx });
+        setStep(3 as Step);
+      }
     }
-  }, [payResult, step, ordenCodigo, ordenId, reason]);
+  }, [payResult, step, ordenCodigo, ordenId, reason, pendingClientTx]);
+
+  // Polling si pendiente
+  useEffect(() => {
+    if (result?.modo === 'payphone' && result.estado === 'pendiente' && result.clientTx) {
+      let stop = false;
+      async function poll() {
+        if (stop) return;
+        try {
+          const r = await fetch(`${API_BASE}/api/payments/payphone/status/${result.clientTx}`);
+          const d = await r.json();
+          if (d.status === 'approved') {
+            setResult({ modo: 'payphone', estado: 'aprobado', codigo: result.codigo, ordenId: result.ordenId });
+          } else if (d.status === 'failed') {
+            setResult({ modo: 'payphone', estado: 'fallido', codigo: result.codigo, ordenId: result.ordenId, reason: 'rechazado' });
+          } else {
+            setTimeout(poll, 2000);
+          }
+        } catch { setTimeout(poll, 3000); }
+      }
+      poll();
+      return () => { stop = true; };
+    }
+  }, [result]);
 
   if (loadingSorteo) return <div className="min-h-screen flex items-center justify-center bg-[#0f1725] text-white">Cargando…</div>;
   if (!sorteo) return <div className="min-h-screen flex items-center justify-center bg-[#0f1725] text-white">Sorteo no encontrado</div>;
@@ -345,9 +407,12 @@ export default function CheckoutPage() {
               {selectedBancoId && metodos.find(m => Number(m.id) === Number(selectedBancoId))?.nombre?.toLowerCase().includes('payphone') && (
                 <div className="space-y-6">
                   <p className="text-sm text-slate-300">Al presionar el botón se abrirá la cajita de pagos de Payphone. Debes completar el pago para recibir la confirmación.</p>
-                  <div className="flex gap-3">
+                  <div className="flex gap-3 flex-wrap">
                     <button onClick={() => setStep(1)} className="px-5 py-2 rounded-md bg-white/10 hover:bg-white/15 text-white text-sm">Atrás</button>
                     <button disabled={!isVerified || payphoneLoading} onClick={iniciarPayphone} className={`px-6 py-2 rounded-md font-semibold text-sm ${isVerified && !payphoneLoading ? 'bg-rose-600 hover:bg-rose-700 text-white' : 'bg-white/10 text-white/40'} transition`}>{payphoneLoading ? 'Preparando…' : 'Pagar con Payphone'}</button>
+                    {payphoneOrdenId && (
+                      <button type="button" onClick={cancelarPayphone} className="px-5 py-2 rounded-md bg-rose-700/30 hover:bg-rose-700/50 text-rose-200 text-sm">Cancelar pago</button>
+                    )}
                   </div>
                   {payphoneMsg && <div className="text-xs text-emerald-300">{payphoneMsg}</div>}
                   <p className="text-[10px] text-slate-500">Si tu pago es aprobado serás redirigido automáticamente y recibirás un correo de confirmación.</p>
@@ -376,6 +441,14 @@ export default function CheckoutPage() {
                     Pago aprobado. Orden <span className="font-semibold">{result.codigo}</span> confirmada. Recibirás un correo con tus números y factura.
                   </div>
                   <button onClick={() => router.push(`/sorteos/${sorteoId}`)} className="px-5 py-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-sm">Volver al sorteo</button>
+                </div>
+              )}
+              {result?.modo === 'payphone' && result.estado === 'pendiente' && (
+                <div className="space-y-4">
+                  <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-400/30 text-amber-100 text-sm animate-pulse">
+                    Estamos confirmando tu pago con Payphone. Esto puede tardar unos segundos...
+                  </div>
+                  <button onClick={() => router.push(`/sorteos/${sorteoId}`)} className="px-5 py-2 rounded-md bg-white/10 hover:bg-white/15 text-white text-sm">Volver al sorteo</button>
                 </div>
               )}
               {result?.modo === 'payphone' && result.estado === 'fallido' && (

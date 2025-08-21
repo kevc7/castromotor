@@ -124,3 +124,14 @@ export function correoOrdenRecibida(data: { clienteNombre: string; codigo: strin
 export function plainList(items: string[]) {
   return items.map(i => `- ${i}`).join('\n');
 }
+
+// Nueva plantilla: cancelación por usuario
+export function correoCancelacion(data: { clienteNombre: string; codigo: string; sorteoNombre?: string; motivo?: string; logoUrl?: string|null; year?: number; }) {
+  return layout(`
+    <h1 style='margin:0 0 14px;font-size:24px;color:${palette.accent};'>Orden cancelada</h1>
+    <p style='margin:0 0 12px;font-size:15px;'>Hola <strong>${data.clienteNombre}</strong>, tu orden <strong>${data.codigo}</strong> fue cancelada correctamente.</p>
+    ${data.sorteoNombre ? `<p style='margin:0 0 12px;font-size:14px;color:${palette.sub}'>Sorteo: <strong style='color:${palette.text}'>${data.sorteoNombre}</strong></p>` : ''}
+    ${data.motivo ? `<p style='margin:0 0 16px;font-size:13px;'>Motivo: <em>${data.motivo}</em></p>` : ''}
+    <p style='margin:0 0 8px;font-size:12px;color:${palette.sub}'>Puedes volver a intentar tu compra cuando desees.</p>
+  `, { title: 'Orden cancelada', logoUrl: data.logoUrl, year: data.year });
+}

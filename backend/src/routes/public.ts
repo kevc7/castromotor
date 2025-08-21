@@ -10,35 +10,6 @@ import { prisma } from "../db";
 import crypto from 'node:crypto';
 
 export const publicRouter = Router();
-
-// Cancelar orden y liberar reservas (Payphone cancelado por usuario)
-publicRouter.post('/orders/:id/cancel', async (req, res) => {
-  try {
-    const ordenId = BigInt(req.params.id);
-    const orden = await prisma.ordenes.findUnique({ where: { id: ordenId }, include: { cliente: true } });
-    if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
-    if (orden.estado_pago === 'aprobado' || orden.estado_pago === 'cancelado') {
-      return res.status(400).json({ error: 'No se puede cancelar una orden ya aprobada o cancelada' });
-    }
-    // Liberar reservas
-    await prisma.numeros_sorteo.updateMany({ where: { orden_id: ordenId, estado: 'reservado' }, data: { estado: 'disponible', orden_id: null } });
-    // Marcar orden como cancelada
-    await prisma.ordenes.update({ where: { id: ordenId }, data: { estado_pago: 'cancelado' } });
-    // Enviar correo de cancelación (motivo solo en el correo)
-    try {
-      if (orden.cliente?.correo_electronico) {
-        const { sendMail } = await import('../utils/mailer');
-        const motivo = 'Pago cancelado por usuario';
-        const html = `<p>Tu orden <b>${orden.codigo}</b> fue cancelada.<br>Motivo: ${motivo}.</p>`;
-        await sendMail({ to: orden.cliente.correo_electronico, subject: `Orden cancelada ${orden.codigo}`, html });
-      }
-    } catch (e) { console.error('Error correo cancelación:', e); }
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('Error cancelando orden:', e);
-    res.status(500).json({ error: 'Error cancelando orden' });
-  }
-});
 // Endpoint público para crear un admin inicial (solo para bootstrap local).
 // En producción, elimínalo o protégelo con una secret de entorno.
 publicRouter.post('/bootstrap/admin', async (req: Request, res: Response, next: NextFunction) => {
@@ -255,8 +226,10 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
       documentId: body.cedula || undefined,
       identificationType: 1, // Cédula
       // URLs de respuesta
-      responseUrl: `${process.env.FRONTEND_URL}/payphone/response`,
-      cancellationUrl: `${process.env.FRONTEND_URL}/sorteos/${body.sorteo_id}`
+    // Redirigir éxito / fallo a handler que luego envía al checkout paso 3
+    responseUrl: `${process.env.FRONTEND_URL}/payphone/response`,
+    // Si el usuario cierra o cancela desde Payphone, lo enviamos de vuelta al checkout para que pueda reintentar
+    cancellationUrl: `${process.env.FRONTEND_URL}/checkout/${body.sorteo_id}?resultado=payphone_fail&reason=cancelado_usuario`,
     };
 
     console.log('✅ [Payphone INIT] Configuración generada:', {
@@ -316,36 +289,50 @@ publicRouter.get('/payphone/response', async (req: Request, res: Response, next:
     console.log('🔍 [Payphone Response] Confirmando transacción con Payphone API');
     
     try {
+      const payload = { id: parseInt(id), clientTxId: clientTransactionId };
+      console.log('🔍 [Payphone Response] Llamando Confirm API con payload:', payload);
       const confirmResponse = await fetch(confirmUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          id: parseInt(id),
-          clientTxId: clientTransactionId
-        }),
+        body: JSON.stringify(payload),
       });
 
-      const confirmData = await confirmResponse.json();
-      console.log('🔍 [Payphone Response] Respuesta de confirmación:', confirmData);
+      const rawText = await confirmResponse.text();
+      let confirmData: any = null;
+      try { confirmData = JSON.parse(rawText); } catch { confirmData = { raw: rawText }; }
+      console.log('🔍 [Payphone Response] Status:', confirmResponse.status, 'Body:', confirmData);
 
-      // Type assertion for confirmData
-      const confirmDataTyped = confirmData as { transactionStatus?: string; [key: string]: any };
+      const statusNorm = String(confirmData?.transactionStatus || confirmData?.status || '').toLowerCase();
+      const terminalNegative = ['rejected','canceled','cancelled','failed','error','declined'];
+      const isPending = ['pending','processing','created'].includes(statusNorm);
+      const approved = confirmResponse.ok && statusNorm === 'approved';
 
-      if (confirmResponse.ok && confirmDataTyped.transactionStatus === 'Approved') {
+      if (approved) {
         // Pago aprobado - procesar como orden aprobada
-        await procesarPagoAprobado(pago, confirmDataTyped);
+        await procesarPagoAprobado(pago, confirmData);
         const sorteoId = (pago.orden as any).sorteo_id;
         // Redirigir a checkout paso 3 (resultado)
         return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_ok&orden=${pago.orden.codigo}&ordenId=${pago.orden.id}`);
+      } else if (isPending || (!statusNorm && confirmResponse.ok)) {
+        // Estado pendiente: mantener reserva por ahora y permitir polling
+        const sorteoId = (pago.orden as any).sorteo_id;
+        console.log('⏳ [Payphone Response] Estado pendiente, redirigiendo a polling:', statusNorm);
+        return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_pending&orden=${pago.orden.codigo}&ordenId=${pago.orden.id}&clientTx=${encodeURIComponent(clientTransactionId)}`);
+      } else if (terminalNegative.includes(statusNorm)) {
+        // Negativo definitivo
+        await liberarReservas(pago.orden_id); // marca como rechazado
+        const sorteoId = (pago.orden as any).sorteo_id;
+        console.log('❌ [Payphone Response] Pago rechazado/cancelado:', statusNorm);
+        return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_fail&orden=${pago.orden.codigo}&reason=${encodeURIComponent(statusNorm)}`);
       } else {
-        // Pago no aprobado - liberar reservas
+        // Caso desconocido: tratar como fallo
         await liberarReservas(pago.orden_id);
         const sorteoId = (pago.orden as any).sorteo_id;
-        console.log('❌ [Payphone Response] Pago no aprobado:', confirmDataTyped);
-        return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_fail&orden=${pago.orden.codigo}&reason=payment_declined`);
+        console.log('❌ [Payphone Response] Estado desconocido, tratando como fallo:', statusNorm);
+        return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_fail&orden=${pago.orden.codigo}&reason=${encodeURIComponent(statusNorm || 'unknown')}`);
       }
     } catch (apiError: any) {
       console.error('❌ [Payphone Response] Error llamando API confirm:', apiError);
@@ -973,6 +960,77 @@ publicRouter.post('/payments/payphone/debug', async (req: Request, res: Response
   } catch (e) {
     console.error('❌ Error en debug Payphone:', e);
     next(e);
+  }
+});
+
+// Cancelar orden (usuario cierra o cancela el flujo antes de completar Payphone o decide abortar)
+publicRouter.post('/orders/:id/cancel', async (req: Request, res: Response) => {
+  try {
+    const ordenId = BigInt(req.params.id);
+    const orden: any = await prisma.ordenes.findUnique({ where: { id: ordenId }, include: { cliente: true, sorteo: true } });
+    if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
+    if (['aprobado','cancelado'].includes(orden.estado_pago)) {
+      return res.status(400).json({ error: 'La orden ya no se puede cancelar' });
+    }
+    // Liberar reservas y marcar cancelado
+    await prisma.$transaction(async (tx) => {
+      await tx.numeros_sorteo.updateMany({ where: { orden_id: ordenId, estado: 'reservado' }, data: { estado: 'disponible', orden_id: null } });
+      await tx.ordenes.update({ where: { id: ordenId }, data: { estado_pago: 'cancelado' } });
+    });
+    // Enviar correo (best-effort)
+    if (orden?.cliente?.correo_electronico) {
+      try {
+        const { sendMail } = await import('../utils/mailer');
+        const { correoCancelacion } = await import('../emails/templates');
+        const html = correoCancelacion({ clienteNombre: orden.cliente.nombres || '', codigo: orden.codigo, sorteoNombre: orden.sorteo?.nombre, motivo: 'Pago cancelado por usuario', logoUrl: process.env.BRAND_LOGO_URL || null, year: new Date().getFullYear() });
+        await sendMail({ to: orden.cliente.correo_electronico, subject: `Orden ${orden.codigo} cancelada`, html });
+      } catch (mailErr) {
+        console.error('⚠️  Error enviando correo cancelación:', mailErr);
+      }
+    }
+    res.json({ ok: true, orden_id: ordenId });
+  } catch (e) {
+    console.error('❌ Error en cancelación de orden:', e);
+    res.status(500).json({ error: 'Error cancelando orden' });
+  }
+});
+
+// Polling de estado Payphone por clientTxId (frontend puede consultar mientras está pendiente)
+publicRouter.get('/payments/payphone/status/:clientTxId', async (req: Request, res: Response) => {
+  try {
+    const clientTxId = req.params.clientTxId;
+    const pago: any = await (prisma as any).pagos_payphone.findUnique({ where: { client_txn_id: clientTxId }, include: { orden: true } });
+    if (!pago) return res.status(404).json({ ok: false, error: 'No encontrado' });
+    // Estados ya determinados localmente
+    if (pago.status === 'APPROVED') return res.json({ ok: true, status: 'approved', orden: pago.orden });
+    if (['FAILED','REJECTED','CANCELED','CANCELLED'].includes(pago.status)) return res.json({ ok: true, status: 'failed' });
+    // Intentar confirmar una vez más si sigue INIT/PENDING
+    const token = process.env.PAYPHONE_TOKEN;
+    if (token) {
+      try {
+        const confirmUrl = 'https://pay.payphonetodoesposible.com/api/button/V2/Confirm';
+        const call = await fetch(confirmUrl, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pago.payphone_txn_id ? Number(pago.payphone_txn_id) : undefined, clientTxId: clientTxId }) });
+        const raw = await call.text();
+        let data: any; try { data = JSON.parse(raw); } catch { data = { raw }; }
+        const statusNorm = String(data?.transactionStatus || data?.status || '').toLowerCase();
+        if (call.ok && statusNorm === 'approved') {
+          await procesarPagoAprobado(pago, data);
+          return res.json({ ok: true, status: 'approved', orden: pago.orden });
+        }
+        if (['rejected','canceled','cancelled','failed'].includes(statusNorm)) {
+          await liberarReservas(pago.orden_id);
+          await (prisma as any).pagos_payphone.update({ where: { id: pago.id }, data: { status: statusNorm.toUpperCase(), raw: data } });
+          return res.json({ ok: true, status: 'failed' });
+        }
+        return res.json({ ok: true, status: 'pending' });
+      } catch (err) {
+        console.error('⚠️  Poll confirm error:', err);
+      }
+    }
+    return res.json({ ok: true, status: 'pending' });
+  } catch (e) {
+    console.error('❌ Error polling estado Payphone:', e);
+    res.status(500).json({ ok: false, error: 'Error interno' });
   }
 });
 
