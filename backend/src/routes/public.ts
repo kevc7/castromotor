@@ -9,6 +9,57 @@ import multer from "multer";
 import { prisma } from "../db";
 import crypto from 'node:crypto';
 
+// Caché para token Payphone para evitar llamadas innecesarias a GetToken
+let payphoneTokenCache: { token: string; obtainedAt: number } | null = null;
+const PAYPHONE_TOKEN_TTL_MS = 50 * 60 * 1000; // 50 minutos (menos que TTL típico de 1h)
+
+/**
+ * Obtiene un token Payphone válido, ya sea de caché o generando uno nuevo
+ * usando CLIENT_ID y CLIENT_SECRET
+ */
+async function getPayphoneToken(): Promise<string> {
+  // Si aún existe token en .env (legado), usarlo con prioridad
+  if (process.env.PAYPHONE_TOKEN?.trim()) {
+    return process.env.PAYPHONE_TOKEN.trim();
+  }
+  
+  // Reutilizar token en caché si está fresco
+  if (payphoneTokenCache && Date.now() - payphoneTokenCache.obtainedAt < PAYPHONE_TOKEN_TTL_MS) {
+    return payphoneTokenCache.token;
+  }
+  
+  // Generar nuevo token
+  const clientId = process.env.PAYPHONE_CLIENT_ID;
+  const clientSecret = process.env.PAYPHONE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error('Credenciales Payphone faltantes (CLIENT_ID / CLIENT_SECRET)');
+  }
+  
+  const url = `${PAYPHONE_BASE_URL}/api/GetToken`;
+  console.log('🔑 Obteniendo nuevo token Payphone...');
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clientId, clientSecret })
+  });
+  
+  const text = await resp.text();
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Error al parsear respuesta GetToken: ${text.slice(0, 200)}`);
+  }
+  
+  if (!resp.ok || !data.token) {
+    throw new Error(`Error obteniendo token Payphone: ${resp.status} - ${text.slice(0, 200)}`);
+  }
+  
+  payphoneTokenCache = { token: data.token, obtainedAt: Date.now() };
+  console.log('✅ Nuevo token Payphone obtenido correctamente');
+  return data.token;
+}
+
 // Base URL configurable para Payphone (sandbox o producción) vía .env
 // Ejemplos:
 //   PAYPHONE_BASE_URL=https://sandbox.payphonetodoesposible.com   (pruebas)
@@ -76,7 +127,8 @@ async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; i
   const authErr = attempts.some(a => a.status === 401 || a.status === 403);
   const notFound = attempts.some(a => a.status === 404);
   const serverErr = attempts.some(a => a.status && a.status >= 500);
-  const networkErr = attempts.some(a => a.error && /(ENOTFOUND|ECONNREFUSED|EAI_AGAIN|ECONNRESET|ETIMEDOUT)/i.test(a.error));
+  // Ampliamos patrón para detectar más errores típicos de fetch / red
+  const networkErr = attempts.some(a => a.error && /(ENOTFOUND|ECONNREFUSED|EAI_AGAIN|ECONNRESET|ETIMEDOUT|fetch failed|socket hang up|request aborted)/i.test(a.error));
   let classified = !anyResp ? 'no_response' : 'unknown';
   if (authErr) classified = 'auth_error';
   else if (networkErr) classified = 'network_error';
@@ -84,6 +136,9 @@ async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; i
   else if (notFound) classified = 'endpoint_not_found';
   else if (serverErr) classified = 'remote_5xx';
   const data = { attempts, classified };
+  if (classified === 'no_response' || classified === 'network_error') {
+    console.error(`[Payphone Confirm Debug][${opts.loggerPrefix}] Clasificación: ${classified}. Attempts detallados:`, attempts);
+  }
   return { approved: false, pending: false, terminal: true, statusNorm: classified, data, source: 'none', htmlBody, attempts };
 }
 // Endpoint público para crear un admin inicial (solo para bootstrap local).
@@ -258,9 +313,11 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
     } catch (e) { console.error('Error enviando correo orden recibida (Payphone):', e); }
 
     // --- CONFIGURACIÓN PARA LA CAJITA DE PAGOS DE PAYPHONE ---
-    const token = process.env.PAYPHONE_TOKEN;
-    if (!token) {
-      console.error('❌ PAYPHONE_TOKEN no está configurado en las variables de entorno.');
+    let token: string;
+    try {
+      token = await getPayphoneToken();
+    } catch (tokenError) {
+      console.error('❌ Error obteniendo token Payphone:', tokenError);
       return res.status(500).json({ error: 'Error de configuración del servidor de pagos.' });
     }
 
@@ -358,10 +415,12 @@ publicRouter.get('/payphone/response', async (req: Request, res: Response, next:
       return res.redirect(`${process.env.FRONTEND_URL}/?error=payphone_payment_not_found`);
     }
 
-    const token = process.env.PAYPHONE_TOKEN || '';
     const storeId = process.env.PAYPHONE_STORE_ID || undefined;
-    if (!token) {
-      console.error('❌ [Payphone Response] Falta PAYPHONE_TOKEN');
+    let token: string;
+    try {
+      token = await getPayphoneToken();
+    } catch (tokenError) {
+      console.error('❌ [Payphone Response] Error obteniendo token:', tokenError);
       return res.redirect(`${process.env.FRONTEND_URL}/checkout/${(pago.orden as any).sorteo_id}?resultado=payphone_fail&orden=${pago.orden.codigo}&reason=conf_no_token`);
     }
     const cid = parseInt(id);
@@ -422,8 +481,13 @@ publicRouter.post('/payphone/webhook', async (req: Request, res: Response) => {
     }
 
     // Confirmar con API oficial si aún no tenemos certeza de estado
-    const token = process.env.PAYPHONE_TOKEN;
-    if (!token) return res.status(500).json({ ok: false, error: 'Config token faltante' });
+    let token: string;
+    try {
+      token = await getPayphoneToken();
+    } catch (tokenError) {
+      console.error('❌ [Payphone Webhook] Error obteniendo token:', tokenError);
+      return res.status(500).json({ ok: false, error: 'Error obteniendo token Payphone' });
+    }
 
     const multi = await confirmarPayphoneMulti({ token, storeId: process.env.PAYPHONE_STORE_ID, id: data.id ?? data.transactionId, clientTx, loggerPrefix: 'webhook' });
     console.log('🔎 [Payphone Webhook] Multi-confirm status:', multi.statusNorm, 'approved:', multi.approved, 'pending:', multi.pending);
@@ -669,15 +733,21 @@ publicRouter.post('/payments/payphone/confirm', async (req: Request, res: Respon
     }
 
     // Llamar a API de confirmación Payphone
-    const token = process.env.PAYPHONE_TOKEN || '';
+    let token: string;
     const storeId = process.env.PAYPHONE_STORE_ID || '';
     
-    console.log('🔍 Payphone config:', { 
-      storeId, 
-      tokenLength: token.length, 
-      tokenPreview: token.substring(0, 10) + '...',
-      mock: process.env.PAYPHONE_MOCK 
-    });
+    try {
+      token = await getPayphoneToken();
+      console.log('🔍 Payphone config:', { 
+        storeId, 
+        tokenLength: token.length, 
+        tokenPreview: token.substring(0, 10) + '...',
+        mock: process.env.PAYPHONE_MOCK 
+      });
+    } catch (tokenError) {
+      console.error('❌ [Payphone Confirm] Error obteniendo token:', tokenError);
+      return res.status(500).json({ error: 'Error obteniendo token Payphone' });
+    }
     
     let success = false;
     let data: any = {};
@@ -908,21 +978,31 @@ publicRouter.post('/payments/payphone/debug', async (req: Request, res: Response
   try {
     console.log('🔍 Payphone debug request received');
     
-    const token = process.env.PAYPHONE_TOKEN || '';
+    let token: string;
     const storeId = process.env.PAYPHONE_STORE_ID || '';
     
-    console.log('🔍 Payphone credentials check:', {
-      hasToken: !!token,
-      hasStoreId: !!storeId,
-      tokenLength: token.length,
-      tokenPreview: token.substring(0, 20) + '...',
-      storeId
-    });
-    
-    if (!token || !storeId) {
+    try {
+      token = await getPayphoneToken();
+      console.log('🔍 Payphone credentials check:', {
+        tokenOk: true,
+        hasStoreId: !!storeId,
+        tokenLength: token.length,
+        tokenPreview: token.substring(0, 20) + '...',
+        storeId,
+        clientIdLength: process.env.PAYPHONE_CLIENT_ID?.length || 0,
+        clientSecretLength: process.env.PAYPHONE_CLIENT_SECRET?.length || 0
+      });
+    } catch (tokenError) {
+      console.error('❌ [Payphone Debug] Error obteniendo token:', tokenError);
       return res.status(400).json({
-        error: 'Credenciales incompletas',
-        details: { hasToken: !!token, hasStoreId: !!storeId }
+        error: 'Error obteniendo token Payphone',
+        details: tokenError instanceof Error ? tokenError.message : String(tokenError)
+      });
+    }
+    
+    if (!storeId) {
+      return res.status(400).json({
+        error: 'StoreId no configurado'
       });
     }
     
@@ -993,6 +1073,33 @@ publicRouter.post('/payments/payphone/debug', async (req: Request, res: Response
   }
 });
 
+// Endpoint adicional para diagnóstico exclusivo del token
+publicRouter.get('/payments/payphone/token-check', async (_req: Request, res: Response) => {
+  try {
+    let token: string;
+    try {
+      token = await getPayphoneToken();
+      return res.json({
+        ok: true,
+        tokenLength: token.length,
+        tokenSource: process.env.PAYPHONE_TOKEN ? 'env_static' : 'dynamic_client_id',
+        clientIdConfigured: !!process.env.PAYPHONE_CLIENT_ID,
+        clientSecretConfigured: !!process.env.PAYPHONE_CLIENT_SECRET
+      });
+    } catch (e) {
+      return res.status(500).json({
+        ok: false,
+        error: e instanceof Error ? e.message : String(e)
+      });
+    }
+  } catch (e) {
+    return res.status(500).json({
+      ok: false,
+      error: 'Error interno al verificar token'
+    });
+  }
+});
+
 // Cancelar orden (usuario cierra o cancela el flujo antes de completar Payphone o decide abortar)
 publicRouter.post('/orders/:id/cancel', async (req: Request, res: Response) => {
   try {
@@ -1034,8 +1141,13 @@ publicRouter.get('/payments/payphone/status/:clientTxId', async (req: Request, r
     // Estados ya determinados localmente
     if (pago.status === 'APPROVED') return res.json({ ok: true, status: 'approved', orden: pago.orden });
     if (['FAILED','REJECTED','CANCELED','CANCELLED','DECLINED','ERROR'].includes(pago.status)) return res.json({ ok: true, status: 'failed' });
-    const token = process.env.PAYPHONE_TOKEN || '';
-    if (!token) return res.json({ ok: true, status: 'pending' });
+    let token: string;
+    try {
+      token = await getPayphoneToken();
+    } catch (tokenError) {
+      console.error('❌ [Payphone Status] Error obteniendo token:', tokenError);
+      return res.json({ ok: true, status: 'pending', error: 'token_error' });
+    }
     const multi = await confirmarPayphoneMulti({ token, storeId: process.env.PAYPHONE_STORE_ID, id: pago.payphone_txn_id ? Number(pago.payphone_txn_id) : undefined, clientTx: clientTxId, loggerPrefix: 'poll' });
     if (multi.approved) {
       await procesarPagoAprobado(pago, multi.data);
