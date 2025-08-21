@@ -9,61 +9,19 @@ import multer from "multer";
 import { prisma } from "../db";
 import crypto from 'node:crypto';
 
-// Caché para token Payphone para evitar llamadas innecesarias a GetToken
-let payphoneTokenCache: { token: string; obtainedAt: number } | null = null;
-const PAYPHONE_TOKEN_TTL_MS = 50 * 60 * 1000; // 50 minutos (menos que TTL típico de 1h)
-
 /**
- * Obtiene un token Payphone válido, ya sea de caché o generando uno nuevo
- * usando CLIENT_ID y CLIENT_SECRET
+ * Obtiene el token Payphone estático desde las variables de entorno
+ * La cajita de pagos usa tokens estáticos del panel, no tokens dinámicos
  */
 async function getPayphoneToken(): Promise<string> {
-  // Si aún existe token en .env (legado), usarlo con prioridad
-  if (process.env.PAYPHONE_TOKEN?.trim()) {
-    return process.env.PAYPHONE_TOKEN.trim();
+  const token = process.env.PAYPHONE_TOKEN;
+  if (!token?.trim()) {
+    throw new Error('PAYPHONE_TOKEN no está configurado en las variables de entorno');
   }
-  
-  // Reutilizar token en caché si está fresco
-  if (payphoneTokenCache && Date.now() - payphoneTokenCache.obtainedAt < PAYPHONE_TOKEN_TTL_MS) {
-    return payphoneTokenCache.token;
-  }
-  
-  // Generar nuevo token
-  const clientId = process.env.PAYPHONE_CLIENT_ID;
-  const clientSecret = process.env.PAYPHONE_CLIENT_SECRET;
-  if (!clientId || !clientSecret) {
-    throw new Error('Credenciales Payphone faltantes (CLIENT_ID / CLIENT_SECRET)');
-  }
-  
-  const url = `${PAYPHONE_BASE_URL}/api/GetToken`;
-  console.log('🔑 Obteniendo nuevo token Payphone...');
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ clientId, clientSecret })
-  });
-  
-  const text = await resp.text();
-  let data: any;
-  try {
-    data = JSON.parse(text);
-  } catch (e) {
-    throw new Error(`Error al parsear respuesta GetToken: ${text.slice(0, 200)}`);
-  }
-  
-  if (!resp.ok || !data.token) {
-    throw new Error(`Error obteniendo token Payphone: ${resp.status} - ${text.slice(0, 200)}`);
-  }
-  
-  payphoneTokenCache = { token: data.token, obtainedAt: Date.now() };
-  console.log('✅ Nuevo token Payphone obtenido correctamente');
-  return data.token;
+  return token.trim();
 }
 
-// Base URL configurable para Payphone (sandbox o producción) vía .env
-// Ejemplos:
-//   PAYPHONE_BASE_URL=https://sandbox.payphonetodoesposible.com   (pruebas)
-//   PAYPHONE_BASE_URL=https://pay.payphonetodoesposible.com       (producción)
+
 const PAYPHONE_BASE_URL = process.env.PAYPHONE_BASE_URL || 'https://pay.payphonetodoesposible.com';
 console.log('🔧 PAYPHONE_BASE_URL activo:', PAYPHONE_BASE_URL);
 
@@ -359,8 +317,8 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
       documentId: body.cedula || undefined,
       identificationType: 1, // Cédula
       // URLs de respuesta
-    // Redirigir éxito / fallo a handler que luego envía al checkout paso 3
-    responseUrl: `${process.env.FRONTEND_URL}/payphone/response`,
+    // URL configurada en el panel de Payphone para recibir notificaciones de estado
+    responseUrl: `https://castromotor.com.ec/api/checkout/payphone/webhook`,
     // Si el usuario cierra o cancela desde Payphone, lo enviamos de vuelta al checkout para que pueda reintentar
     cancellationUrl: `${process.env.FRONTEND_URL}/checkout/${body.sorteo_id}?resultado=payphone_fail&reason=cancelado_usuario`,
     };
@@ -1082,9 +1040,10 @@ publicRouter.get('/payments/payphone/token-check', async (_req: Request, res: Re
       return res.json({
         ok: true,
         tokenLength: token.length,
-        tokenSource: process.env.PAYPHONE_TOKEN ? 'env_static' : 'dynamic_client_id',
-        clientIdConfigured: !!process.env.PAYPHONE_CLIENT_ID,
-        clientSecretConfigured: !!process.env.PAYPHONE_CLIENT_SECRET
+        tokenSource: 'env_static',
+        tokenConfigured: !!process.env.PAYPHONE_TOKEN,
+        tokenPreview: token.substring(0, 20) + '...',
+        message: 'Cajita de pagos usa token estático del panel'
       });
     } catch (e) {
       return res.status(500).json({

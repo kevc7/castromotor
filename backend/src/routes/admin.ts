@@ -932,4 +932,45 @@ adminRouter.patch('/sorteos/:id/borrador', requireAuth, async (req, res, next) =
   } catch (e) { next(e); }
 });
 
+// Endpoint para crear un usuario admin inicial (bootstrap)
+adminRouter.post("/bootstrap/admin", async (req, res, next) => {
+  try {
+    // Validar payload
+    const body = z.object({
+      correo: z.string().email(),
+      contrasena: z.string().min(4),
+      nombre_usuario: z.string().min(3),
+      rol: z.enum(['admin', 'superadmin', 'root']).default('admin')
+    }).parse(req.body);
+
+    // Verificar si ya existen usuarios (para limitar este endpoint)
+    const countExistentes = await prisma.usuarios.count();
+    if (countExistentes > 0) {
+      return res.status(403).json({ error: "Ya existen usuarios en el sistema" });
+    }
+
+    // Crear el usuario admin
+    const hashedPassword = await bcrypt.hash(body.contrasena, 10);
+    const admin = await prisma.usuarios.create({
+      data: {
+        correo_electronico: body.correo,
+        contrasena_hash: hashedPassword,
+        nombre_usuario: body.nombre_usuario,
+        rol: body.rol
+      }
+    });
+
+    res.json({ 
+      mensaje: "Usuario administrador creado correctamente",
+      usuario: {
+        id: admin.id,
+        correo_electronico: admin.correo_electronico,
+        nombre_usuario: admin.nombre_usuario,
+        rol: admin.rol
+      }
+    });
+  } catch (e) {
+    next(e);
+  }
+});
 

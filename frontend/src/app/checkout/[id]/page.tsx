@@ -111,7 +111,10 @@ export default function CheckoutPage() {
   }, [cliente]);
   useEffect(() => { validateCliente(); }, [cliente, validateCliente]);
 
-  // Countdown verificación
+  // Countdown verificación y control de resend timeout
+  const [canResendCode, setCanResendCode] = useState(true);
+  const [resendCountdown, setResendCountdown] = useState(0);
+  
   useEffect(() => {
     if (!expiresAt) return;
     const id = setInterval(() => {
@@ -121,9 +124,30 @@ export default function CheckoutPage() {
     }, 1000);
     return () => clearInterval(id);
   }, [expiresAt]);
+  
+  // Countdown para reenvío de código
+  useEffect(() => {
+    if (resendCountdown <= 0) {
+      setCanResendCode(true);
+      return;
+    }
+    
+    setCanResendCode(false);
+    const id = setInterval(() => {
+      setResendCountdown(prev => {
+        const newValue = prev - 1;
+        if (newValue <= 0) setCanResendCode(true);
+        return newValue;
+      });
+    }, 1000);
+    
+    return () => clearInterval(id);
+  }, [resendCountdown]);
 
   async function solicitarCodigo() {
     try {
+      if (!canResendCode) return;
+      
       setVerifMsg(null);
       setSendingCode(true);
       const e = validateCliente();
@@ -135,6 +159,9 @@ export default function CheckoutPage() {
       setVerificationCode('');
       setExpiresAt(Date.now() + 10 * 60 * 1000);
       setVerifMsg(data.mail_sent ? 'Código enviado al correo' : 'Generado pero no se envió. Revisa dirección.');
+      
+      // Establecer timeout para reenvío (60 segundos)
+      setResendCountdown(60);
     } catch (err: any) {
       setVerifMsg(err?.message || 'Error solicitando código');
     } finally { setSendingCode(false); }
@@ -161,7 +188,8 @@ export default function CheckoutPage() {
   async function crearOrdenTransferencia() {
     try {
       setAlert(null);
-      if (!paymentMode || paymentMode !== 'transferencia') return;
+      // Verificar que estamos en modo transferencia
+      if (paymentMode !== 'transferencia') throw new Error('Método de pago no es transferencia');
       if (!selectedBancoId) throw new Error('Selecciona una cuenta bancaria');
       if (!comprobanteFile) throw new Error('Debes subir el comprobante');
       if (!isVerified) throw new Error('Verifica tu correo');
@@ -193,6 +221,8 @@ export default function CheckoutPage() {
   async function iniciarPayphone() {
     try {
       setAlert(null);
+      // Verificar que estamos en modo payphone
+      if (paymentMode !== 'payphone') throw new Error('Método de pago no es Payphone');
       if (!metodoPayphoneDisponible) throw new Error('Payphone no disponible');
       if (!isVerified) throw new Error('Verifica tu correo primero');
       setPayphoneLoading(true); setPayphoneMsg('Preparando pago con Payphone...');
@@ -379,7 +409,9 @@ export default function CheckoutPage() {
                   <span className="text-xs text-slate-400">Correo</span>
                   <div className="flex gap-2 flex-col sm:flex-row">
                     <input type="email" className={`flex-1 border rounded-md px-3 py-2 bg-black/30 text-white border-white/10 focus:outline-none focus:ring-2 focus:ring-rose-500/40 ${errors.correo_electronico ? 'ring-rose-500/40 border-rose-500/50' : ''}`} value={cliente.correo_electronico} onChange={e => { setCliente(c => ({ ...c, correo_electronico: e.target.value })); setIsVerified(false); }} />
-                    <button type="button" onClick={solicitarCodigo} disabled={sendingCode || !!errors.correo_electronico} className={`px-4 py-2 rounded-md text-white text-sm font-medium ${sendingCode ? 'bg-rose-700/60 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-700'} transition`}>{sendingCode ? 'Enviando…' : 'Enviar código'}</button>
+                    <button type="button" onClick={solicitarCodigo} disabled={sendingCode || !canResendCode || !!errors.correo_electronico} className={`px-4 py-2 rounded-md text-white text-sm font-medium ${!canResendCode ? 'bg-gray-600 cursor-not-allowed' : sendingCode ? 'bg-rose-700/60 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-700'} transition`}>
+                      {sendingCode ? 'Enviando…' : !canResendCode ? `Espera ${resendCountdown}s` : 'Enviar código'}
+                    </button>
                   </div>
                   {verifMsg && <span className={`text-[11px] ${isVerified ? 'text-emerald-400' : 'text-amber-300'}`}>{verifMsg}{expiresAt && remaining>0 && ` (expira en ${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')})`}</span>}
                 </label>
@@ -407,7 +439,23 @@ export default function CheckoutPage() {
                 {metodos.map((m) => (
                   <label key={m.id} className={`block rounded-lg border p-3 text-sm cursor-pointer transition-all ${Number(selectedBancoId)===Number(m.id) ? 'border-rose-500 bg-rose-500/10' : 'border-white/10 bg-black/20 hover:border-rose-400/50'}`}>
                     <div className="flex items-center gap-2">
-                      <input type="radio" name="metodo" value={m.id} checked={Number(selectedBancoId) === Number(m.id)} onChange={() => setSelectedBancoId(Number(m.id))} />
+                      <input type="radio" name="metodo" value={m.id} checked={Number(selectedBancoId) === Number(m.id)} onChange={() => {
+                        setSelectedBancoId(Number(m.id));
+                        // Determinar el tipo de método de pago según sus detalles
+                        if (m.detalles?.titular && m.detalles?.numero_cuenta) {
+                          // Si tiene titular y número de cuenta, es transferencia bancaria
+                          setPaymentMode('transferencia');
+                          // No limpiar el comprobante si ya estaba en modo transferencia
+                          if (paymentMode !== 'transferencia') {
+                            setComprobanteFile(null);
+                          }
+                        } else if (m.detalles?.storeId || m.tipo === 'gateway') {
+                          // Si tiene storeId o es de tipo gateway, es Payphone
+                          setPaymentMode('payphone');
+                          // Limpiar comprobante si cambia a Payphone
+                          setComprobanteFile(null);
+                        }
+                      }} />
                       <span className="font-medium">{m.nombre}</span>
                     </div>
                     {m.detalles && (
@@ -422,12 +470,14 @@ export default function CheckoutPage() {
                 {metodos.length === 0 && <div className="text-sm text-slate-400">Pronto habilitaremos métodos disponibles…</div>}
               </div>
               {/* Si el método seleccionado es transferencia/deposito, mostrar comprobante */}
-              {selectedBancoId && metodos.find(m => Number(m.id) === Number(selectedBancoId))?.tipo?.includes('transfer') && (
+              {paymentMode === 'transferencia' && selectedBancoId && (
                 <div className="space-y-6">
                   <div>
                     <h3 className="text-sm font-semibold mb-2">Comprobante de pago</h3>
                     <label className="block cursor-pointer">
-                      <input type="file" className="hidden" accept="image/*,.pdf" onChange={e => setComprobanteFile(e.target.files?.[0] || null)} />
+                      <input type="file" className="hidden" accept="image/*,.pdf" onChange={e => {
+                        setComprobanteFile(e.target.files?.[0] || null);
+                      }} />
                       <div className={`rounded-lg border-2 border-dashed p-6 text-center text-xs ${comprobanteFile ? 'border-emerald-500/60 bg-emerald-500/5 text-emerald-200' : 'border-white/15 bg-black/20 hover:border-rose-400/60 text-slate-300'} transition`}>
                         {comprobanteFile ? <>Archivo: <span className="font-medium">{comprobanteFile.name}</span></> : <>Click para subir (imagen o PDF)</>}
                       </div>
@@ -441,7 +491,7 @@ export default function CheckoutPage() {
                 </div>
               )}
               {/* Si el método seleccionado es Payphone, mostrar botón cajita */}
-              {selectedBancoId && metodos.find(m => Number(m.id) === Number(selectedBancoId))?.nombre?.toLowerCase().includes('payphone') && (
+              {paymentMode === 'payphone' && selectedBancoId && (
                 <div className="space-y-6">
                   <p className="text-sm text-slate-300">Al presionar el botón se abrirá la cajita de pagos de Payphone. Debes completar el pago para recibir la confirmación.</p>
                   <div className="flex gap-3 flex-wrap">
@@ -466,10 +516,10 @@ export default function CheckoutPage() {
               <h2 className="text-lg font-semibold mb-4">Resultado (Paso 3)</h2>
               {result?.modo === 'transferencia' && (
                 <div className="space-y-4">
-                  <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-400/30 text-amber-100 text-sm">
+                  <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-400/30 text-emerald-100 text-sm">
                     Tu orden <span className="font-semibold">{result.codigo}</span> fue recibida y está <span className="font-semibold">pendiente de revisión</span>. Te notificaremos por correo cuando sea aprobada y se asignen tus números.
                   </div>
-                  <button onClick={() => router.push(`/sorteos/${sorteoId}`)} className="px-5 py-2 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-sm">Volver al sorteo</button>
+                  <button onClick={() => router.push(`/sorteos/${sorteoId}/info`)} className="px-5 py-2 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-sm">Volver al sorteo</button>
                 </div>
               )}
               {result?.modo === 'payphone' && result.estado === 'aprobado' && (
@@ -477,15 +527,15 @@ export default function CheckoutPage() {
                   <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-400/30 text-emerald-100 text-sm">
                     Pago aprobado. Orden <span className="font-semibold">{result.codigo}</span> confirmada. Recibirás un correo con tus números y factura.
                   </div>
-                  <button onClick={() => router.push(`/sorteos/${sorteoId}`)} className="px-5 py-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-sm">Volver al sorteo</button>
+                  <button onClick={() => router.push(`/sorteos/${sorteoId}/info`)} className="px-5 py-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-sm">Volver al sorteo</button>
                 </div>
               )}
               {result?.modo === 'payphone' && result.estado === 'pendiente' && (
                 <div className="space-y-4">
-                  <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-400/30 text-amber-100 text-sm animate-pulse">
+                  <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-400/30 text-emerald-100 text-sm animate-pulse">
                     Estamos confirmando tu pago con Payphone. Esto puede tardar unos segundos...
                   </div>
-                  <button onClick={() => router.push(`/sorteos/${sorteoId}`)} className="px-5 py-2 rounded-md bg-white/10 hover:bg-white/15 text-white text-sm">Volver al sorteo</button>
+                  <button onClick={() => router.push(`/sorteos/${sorteoId}/info`)} className="px-5 py-2 rounded-md bg-white/10 hover:bg-white/15 text-white text-sm">Volver al sorteo</button>
                 </div>
               )}
         {result?.modo === 'payphone' && result.estado === 'fallido' && (
