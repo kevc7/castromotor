@@ -212,25 +212,42 @@ export default function CheckoutPage() {
           await new Promise(r => setTimeout(r, 600));
         }
         if ((window as any).PPaymentButtonBox) {
-          const containerId = 'pp-box';
-          let container = document.getElementById(containerId);
-          if (!container) { 
-            container = document.createElement('div'); 
-            container.id = containerId; 
-            container.style.position = 'fixed';
-            container.style.top = '0';
-            container.style.left = '0';
-            container.style.width = '100%';
-            container.style.height = '100%';
-            container.style.display = 'flex';
-            container.style.alignItems = 'center';
-            container.style.justifyContent = 'center';
-            container.style.background = 'rgba(0,0,0,0.72)';
-            container.style.zIndex = '9999';
-            document.body.appendChild(container); 
+          // Overlay + contenedor interno, con botón de cierre
+          let overlay = document.getElementById('pp-overlay');
+          if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'pp-overlay';
+            Object.assign(overlay.style, {
+              position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+              background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              zIndex: '9999', padding: '20px', boxSizing: 'border-box'
+            } as CSSStyleDeclaration);
+            document.body.appendChild(overlay);
+          } else {
+            overlay.innerHTML = '';
           }
+          const closeBtn = document.createElement('button');
+          closeBtn.type = 'button';
+          closeBtn.innerText = '✕';
+            Object.assign(closeBtn.style, {
+              position: 'absolute', top: '14px', right: '16px', background: 'rgba(0,0,0,0.55)', color: '#fff',
+              border: '1px solid rgba(255,255,255,0.25)', borderRadius: '6px', cursor: 'pointer', fontSize: '16px',
+              width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+            } as CSSStyleDeclaration);
+          closeBtn.onmouseenter = () => { closeBtn.style.background = 'rgba(255,0,90,0.6)'; };
+          closeBtn.onmouseleave = () => { closeBtn.style.background = 'rgba(0,0,0,0.55)'; };
+          closeBtn.onclick = () => { cancelarPayphone(); };
+          // Contenedor donde Payphone inyectará su UI
+          const inner = document.createElement('div');
+          inner.id = 'pp-box';
+          Object.assign(inner.style, {
+            width: '100%', maxWidth: '640px', background: '#fff', borderRadius: '12px',
+            boxShadow: '0 8px 28px -6px rgba(0,0,0,0.5)', overflow: 'hidden', position: 'relative'
+          } as CSSStyleDeclaration);
+          overlay.appendChild(inner);
+          overlay.appendChild(closeBtn);
           const ppb = new (window as any).PPaymentButtonBox(d.payphoneConfig);
-          ppb.render(containerId);
+          ppb.render('pp-box');
           setPayphoneMsg('✔ Cajita abierta. Completa el pago.');
         } else throw new Error('SDK Payphone no cargado');
       }
@@ -243,8 +260,8 @@ export default function CheckoutPage() {
   async function cancelarPayphone() {
     try {
       if (!payphoneOrdenId) return;
-      const el = document.getElementById('pp-box');
-      if (el) el.remove();
+      const overlay = document.getElementById('pp-overlay');
+      if (overlay) overlay.remove();
       const resp = await fetch(`${API_BASE}/api/orders/${payphoneOrdenId}/cancel`, { method: 'POST' });
       if (!resp.ok) throw new Error('No se pudo cancelar');
       setResult({ modo: 'payphone', estado: 'fallido', reason: 'cancelado_usuario' });
@@ -252,6 +269,26 @@ export default function CheckoutPage() {
     } catch (e:any) {
       setAlert({ type: 'error', msg: e?.message || 'Error cancelando' });
     }
+  }
+
+  function retryPayphone() {
+    // Elimina overlay residual
+    const overlay = document.getElementById('pp-overlay');
+    if (overlay) overlay.remove();
+    setResult(null);
+    setPayphoneOrdenId(null);
+    // Volver al paso 2 directamente (se mantienen datos cliente)
+    setStep(2);
+    // Limpiar query params resultado sin perder selección inicial
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('resultado');
+      url.searchParams.delete('orden');
+      url.searchParams.delete('ordenId');
+      url.searchParams.delete('reason');
+      url.searchParams.delete('clientTx');
+      window.history.replaceState({}, '', url.toString());
+    } catch {}
   }
 
   // UI helpers
@@ -451,12 +488,12 @@ export default function CheckoutPage() {
                   <button onClick={() => router.push(`/sorteos/${sorteoId}`)} className="px-5 py-2 rounded-md bg-white/10 hover:bg-white/15 text-white text-sm">Volver al sorteo</button>
                 </div>
               )}
-              {result?.modo === 'payphone' && result.estado === 'fallido' && (
+        {result?.modo === 'payphone' && result.estado === 'fallido' && (
                 <div className="space-y-4">
                   <div className="p-4 rounded-lg bg-rose-500/10 border border-rose-400/30 text-rose-100 text-sm">
                     El pago no se completó {result.reason && `(motivo: ${result.reason})`}. Puedes intentar nuevamente.
                   </div>
-                  <button onClick={() => router.push(`/checkout/${sorteoId}`)} className="px-5 py-2 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-sm">Intentar otra vez</button>
+          <button onClick={retryPayphone} className="px-5 py-2 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-sm">Intentar otra vez</button>
                 </div>
               )}
               {!result && (

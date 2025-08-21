@@ -10,6 +10,62 @@ import { prisma } from "../db";
 import crypto from 'node:crypto';
 
 export const publicRouter = Router();
+
+// Helper: confirm Payphone transaction with multiple strategies and better diagnostics
+async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; id?: number; clientTx: string; loggerPrefix: string; }): Promise<{ approved: boolean; pending: boolean; terminal: boolean; statusNorm: string; data: any; source: string; htmlBody?: boolean; attempts: any[]; }> {
+  const attempts: any[] = [];
+  const headers = { 'Authorization': `Bearer ${opts.token}`, 'Content-Type': 'application/json' } as any;
+  type FetchResp = any; // evitar conflicto con tipo Response de Express
+  const recordAttempt = (label: string, resp: FetchResp | null, raw: string | null, parsed: any, error?: any) => {
+    attempts.push({ label, status: resp?.status, ok: !!resp?.ok, rawSnippet: raw ? raw.slice(0,180) : null, parsedKeys: parsed && typeof parsed === 'object' ? Object.keys(parsed) : null, error: error ? (error.message || String(error)) : undefined });
+  };
+  const decode = (raw: string) => { try { return JSON.parse(raw); } catch { return { raw }; } };
+  // Strategy A: button/V2/Confirm with clientTxId
+  try {
+    const body = JSON.stringify({ id: opts.id, clientTxId: opts.clientTx });
+    const url = 'https://pay.payphonetodoesposible.com/api/button/V2/Confirm';
+    const resp = await fetch(url, { method: 'POST', headers, body });
+    const raw = await resp.text();
+    const parsed = decode(raw);
+    recordAttempt('button:clientTxId', resp, raw, parsed);
+    const statusNorm = String(parsed?.transactionStatus || parsed?.status || '').toLowerCase();
+    if (resp.ok && statusNorm === 'approved') return { approved: true, pending: false, terminal: true, statusNorm, data: parsed, source: 'button:clientTxId', htmlBody: raw.trim().startsWith('<'), attempts };
+    if (['pending','processing','created'].includes(statusNorm)) return { approved: false, pending: true, terminal: false, statusNorm, data: parsed, source: 'button:clientTxId', htmlBody: raw.trim().startsWith('<'), attempts };
+    if (['rejected','canceled','cancelled','failed','declined','error'].includes(statusNorm)) return { approved: false, pending: false, terminal: true, statusNorm, data: parsed, source: 'button:clientTxId', htmlBody: raw.trim().startsWith('<'), attempts };
+    // Fallthrough to next strategy
+  } catch (e:any) { recordAttempt('button:clientTxId', null, null, null, e); }
+  // Strategy B: button/V2/Confirm with clientTransactionId (alternative naming)
+  try {
+    const body = JSON.stringify({ id: opts.id, clientTransactionId: opts.clientTx });
+    const url = 'https://pay.payphonetodoesposible.com/api/button/V2/Confirm';
+    const resp = await fetch(url, { method: 'POST', headers, body });
+    const raw = await resp.text();
+    const parsed = decode(raw);
+    recordAttempt('button:clientTransactionId', resp, raw, parsed);
+    const statusNorm = String(parsed?.transactionStatus || parsed?.status || '').toLowerCase();
+    if (resp.ok && statusNorm === 'approved') return { approved: true, pending: false, terminal: true, statusNorm, data: parsed, source: 'button:clientTransactionId', htmlBody: raw.trim().startsWith('<'), attempts };
+    if (['pending','processing','created'].includes(statusNorm)) return { approved: false, pending: true, terminal: false, statusNorm, data: parsed, source: 'button:clientTransactionId', htmlBody: raw.trim().startsWith('<'), attempts };
+    if (['rejected','canceled','cancelled','failed','declined','error'].includes(statusNorm)) return { approved: false, pending: false, terminal: true, statusNorm, data: parsed, source: 'button:clientTransactionId', htmlBody: raw.trim().startsWith('<'), attempts };
+  } catch (e:any) { recordAttempt('button:clientTransactionId', null, null, null, e); }
+  // Strategy C: Sale/Confirm (requiere storeId)
+  if (opts.storeId) {
+    try {
+      const body = JSON.stringify({ storeId: opts.storeId, clientTransactionId: opts.clientTx });
+      const url = 'https://pay.payphonetodoesposible.com/api/Sale/Confirm';
+      const resp = await fetch(url, { method: 'POST', headers, body });
+      const raw = await resp.text();
+      const parsed = decode(raw);
+      recordAttempt('sale:clientTransactionId', resp, raw, parsed);
+      const statusNorm = String(parsed?.transactionStatus || parsed?.status || '').toLowerCase();
+      if (resp.ok && statusNorm === 'approved') return { approved: true, pending: false, terminal: true, statusNorm, data: parsed, source: 'sale:clientTransactionId', htmlBody: raw.trim().startsWith('<'), attempts };
+      if (['pending','processing','created'].includes(statusNorm)) return { approved: false, pending: true, terminal: false, statusNorm, data: parsed, source: 'sale:clientTransactionId', htmlBody: raw.trim().startsWith('<'), attempts };
+      if (['rejected','canceled','cancelled','failed','declined','error'].includes(statusNorm)) return { approved: false, pending: false, terminal: true, statusNorm, data: parsed, source: 'sale:clientTransactionId', htmlBody: raw.trim().startsWith('<'), attempts };
+    } catch (e:any) { recordAttempt('sale:clientTransactionId', null, null, null, e); }
+  }
+  // Unknown situation
+  const finalStatus = attempts.find(a => a.status) ? 'unknown' : 'no_response';
+  return { approved: false, pending: false, terminal: true, statusNorm: finalStatus, data: { attempts }, source: 'none', htmlBody: false, attempts };
+}
 // Endpoint público para crear un admin inicial (solo para bootstrap local).
 // En producción, elimínalo o protégelo con una secret de entorno.
 publicRouter.post('/bootstrap/admin', async (req: Request, res: Response, next: NextFunction) => {
@@ -282,63 +338,33 @@ publicRouter.get('/payphone/response', async (req: Request, res: Response, next:
       return res.redirect(`${process.env.FRONTEND_URL}/?error=payphone_payment_not_found`);
     }
 
-    // Confirmar con la API de Payphone
-    const token = process.env.PAYPHONE_TOKEN;
-    const confirmUrl = 'https://pay.payphonetodoesposible.com/api/button/V2/Confirm';
-    
-    console.log('🔍 [Payphone Response] Confirmando transacción con Payphone API');
-    
-    try {
-      const payload = { id: parseInt(id), clientTxId: clientTransactionId };
-      console.log('🔍 [Payphone Response] Llamando Confirm API con payload:', payload);
-      const confirmResponse = await fetch(confirmUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const rawText = await confirmResponse.text();
-      let confirmData: any = null;
-      try { confirmData = JSON.parse(rawText); } catch { confirmData = { raw: rawText }; }
-      console.log('🔍 [Payphone Response] Status:', confirmResponse.status, 'Body:', confirmData);
-
-      const statusNorm = String(confirmData?.transactionStatus || confirmData?.status || '').toLowerCase();
-      const terminalNegative = ['rejected','canceled','cancelled','failed','error','declined'];
-      const isPending = ['pending','processing','created'].includes(statusNorm);
-      const approved = confirmResponse.ok && statusNorm === 'approved';
-
-      if (approved) {
-        // Pago aprobado - procesar como orden aprobada
-        await procesarPagoAprobado(pago, confirmData);
-        const sorteoId = (pago.orden as any).sorteo_id;
-        // Redirigir a checkout paso 3 (resultado)
-        return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_ok&orden=${pago.orden.codigo}&ordenId=${pago.orden.id}`);
-      } else if (isPending || (!statusNorm && confirmResponse.ok)) {
-        // Estado pendiente: mantener reserva por ahora y permitir polling
-        const sorteoId = (pago.orden as any).sorteo_id;
-        console.log('⏳ [Payphone Response] Estado pendiente, redirigiendo a polling:', statusNorm);
-        return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_pending&orden=${pago.orden.codigo}&ordenId=${pago.orden.id}&clientTx=${encodeURIComponent(clientTransactionId)}`);
-      } else if (terminalNegative.includes(statusNorm)) {
-        // Negativo definitivo
-        await liberarReservas(pago.orden_id); // marca como rechazado
-        const sorteoId = (pago.orden as any).sorteo_id;
-        console.log('❌ [Payphone Response] Pago rechazado/cancelado:', statusNorm);
-        return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_fail&orden=${pago.orden.codigo}&reason=${encodeURIComponent(statusNorm)}`);
-      } else {
-        // Caso desconocido: tratar como fallo
-        await liberarReservas(pago.orden_id);
-        const sorteoId = (pago.orden as any).sorteo_id;
-        console.log('❌ [Payphone Response] Estado desconocido, tratando como fallo:', statusNorm);
-        return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_fail&orden=${pago.orden.codigo}&reason=${encodeURIComponent(statusNorm || 'unknown')}`);
-      }
-    } catch (apiError: any) {
-      console.error('❌ [Payphone Response] Error llamando API confirm:', apiError);
-      const sorteoId = (pago.orden as any).sorteo_id;
-      return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_fail&orden=${pago.orden.codigo}&reason=api_error`);
+    const token = process.env.PAYPHONE_TOKEN || '';
+    const storeId = process.env.PAYPHONE_STORE_ID || undefined;
+    if (!token) {
+      console.error('❌ [Payphone Response] Falta PAYPHONE_TOKEN');
+      return res.redirect(`${process.env.FRONTEND_URL}/checkout/${(pago.orden as any).sorteo_id}?resultado=payphone_fail&orden=${pago.orden.codigo}&reason=conf_no_token`);
     }
+    const cid = parseInt(id);
+    const confirm = await confirmarPayphoneMulti({ token, storeId, id: isNaN(cid) ? undefined : cid, clientTx: clientTransactionId, loggerPrefix: 'response' });
+    console.log('🔍 [Payphone Response] Resultado multi-confirm:', confirm.statusNorm, 'source:', confirm.source, 'approved:', confirm.approved, 'pending:', confirm.pending, 'htmlBody:', confirm.htmlBody);
+    if (confirm.approved) {
+      await procesarPagoAprobado(pago, confirm.data);
+      const sorteoId = (pago.orden as any).sorteo_id;
+      return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_ok&orden=${pago.orden.codigo}&ordenId=${pago.orden.id}`);
+    }
+    if (confirm.pending) {
+      const sorteoId = (pago.orden as any).sorteo_id;
+      return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_pending&orden=${pago.orden.codigo}&ordenId=${pago.orden.id}&clientTx=${encodeURIComponent(clientTransactionId)}`);
+    }
+    // Terminal negativo o desconocido
+    if (['rejected','canceled','cancelled','failed','declined','error'].includes(confirm.statusNorm)) {
+      await liberarReservas(pago.orden_id);
+    } else if (confirm.statusNorm === 'unknown' || confirm.statusNorm === 'no_response') {
+      // No liberar aún si queremos permitir un reintento de confirm manual. Por ahora liberamos para evitar bloqueo.
+      await liberarReservas(pago.orden_id);
+    }
+    const sorteoId = (pago.orden as any).sorteo_id;
+    return res.redirect(`${process.env.FRONTEND_URL}/checkout/${sorteoId}?resultado=payphone_fail&orden=${pago.orden.codigo}&reason=${encodeURIComponent(confirm.statusNorm)}`);
 
   } catch (e) {
     console.error('❌ Error en respuesta Payphone:', e);
@@ -377,36 +403,18 @@ publicRouter.post('/payphone/webhook', async (req: Request, res: Response) => {
     const token = process.env.PAYPHONE_TOKEN;
     if (!token) return res.status(500).json({ ok: false, error: 'Config token faltante' });
 
-    let confirmResult: any = null;
-    try {
-      const confirmUrl = 'https://pay.payphonetodoesposible.com/api/button/V2/Confirm';
-      const resp = await fetch(confirmUrl, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: data.id ?? data.transactionId, clientTxId: clientTx })
-      });
-      const txt = await resp.text();
-      try { confirmResult = JSON.parse(txt); } catch { confirmResult = { raw: txt }; }
-      console.log('🔎 [Payphone Webhook] Respuesta confirmación:', confirmResult);
-      if (!resp.ok) {
-        return res.status(502).json({ ok: false, error: 'Fallo confirmación', details: confirmResult });
-      }
-    } catch (err) {
-      console.error('❌ [Payphone Webhook] Error confirmando con Payphone:', err);
-      return res.status(500).json({ ok: false, error: 'Error confirmación' });
-    }
-
-    const statusNorm = (confirmResult?.transactionStatus || confirmResult?.status || '').toLowerCase();
-    if (statusNorm === 'approved') {
-      await procesarPagoAprobado(pago, confirmResult);
+    const multi = await confirmarPayphoneMulti({ token, storeId: process.env.PAYPHONE_STORE_ID, id: data.id ?? data.transactionId, clientTx, loggerPrefix: 'webhook' });
+    console.log('🔎 [Payphone Webhook] Multi-confirm status:', multi.statusNorm, 'approved:', multi.approved, 'pending:', multi.pending);
+    if (multi.approved) {
+      await procesarPagoAprobado(pago, multi.data);
       return res.json({ ok: true, approved: true });
-    } else if (['rejected','canceled','cancelled','failed'].includes(statusNorm)) {
+    } else if (['rejected','canceled','cancelled','failed','declined','error'].includes(multi.statusNorm)) {
       await liberarReservas(pago.orden_id);
-      await (prisma as any).pagos_payphone.update({ where: { id: pago.id }, data: { status: statusNorm.toUpperCase(), raw: confirmResult } });
-      return res.json({ ok: true, approved: false, status: statusNorm });
+      await (prisma as any).pagos_payphone.update({ where: { id: pago.id }, data: { status: multi.statusNorm.toUpperCase(), raw: multi.data } });
+      return res.json({ ok: true, approved: false, status: multi.statusNorm });
     } else {
-      console.log('ℹ️  [Payphone Webhook] Estado no final:', statusNorm);
-      return res.json({ ok: true, pending: true, status: statusNorm });
+      console.log('ℹ️  [Payphone Webhook] Estado no final o desconocido:', multi.statusNorm);
+      return res.json({ ok: true, pending: true, status: multi.statusNorm });
     }
   } catch (e) {
     console.error('❌ [Payphone Webhook] Error procesando payload:', e);
@@ -1003,29 +1011,18 @@ publicRouter.get('/payments/payphone/status/:clientTxId', async (req: Request, r
     if (!pago) return res.status(404).json({ ok: false, error: 'No encontrado' });
     // Estados ya determinados localmente
     if (pago.status === 'APPROVED') return res.json({ ok: true, status: 'approved', orden: pago.orden });
-    if (['FAILED','REJECTED','CANCELED','CANCELLED'].includes(pago.status)) return res.json({ ok: true, status: 'failed' });
-    // Intentar confirmar una vez más si sigue INIT/PENDING
-    const token = process.env.PAYPHONE_TOKEN;
-    if (token) {
-      try {
-        const confirmUrl = 'https://pay.payphonetodoesposible.com/api/button/V2/Confirm';
-        const call = await fetch(confirmUrl, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pago.payphone_txn_id ? Number(pago.payphone_txn_id) : undefined, clientTxId: clientTxId }) });
-        const raw = await call.text();
-        let data: any; try { data = JSON.parse(raw); } catch { data = { raw }; }
-        const statusNorm = String(data?.transactionStatus || data?.status || '').toLowerCase();
-        if (call.ok && statusNorm === 'approved') {
-          await procesarPagoAprobado(pago, data);
-          return res.json({ ok: true, status: 'approved', orden: pago.orden });
-        }
-        if (['rejected','canceled','cancelled','failed'].includes(statusNorm)) {
-          await liberarReservas(pago.orden_id);
-          await (prisma as any).pagos_payphone.update({ where: { id: pago.id }, data: { status: statusNorm.toUpperCase(), raw: data } });
-          return res.json({ ok: true, status: 'failed' });
-        }
-        return res.json({ ok: true, status: 'pending' });
-      } catch (err) {
-        console.error('⚠️  Poll confirm error:', err);
-      }
+    if (['FAILED','REJECTED','CANCELED','CANCELLED','DECLINED','ERROR'].includes(pago.status)) return res.json({ ok: true, status: 'failed' });
+    const token = process.env.PAYPHONE_TOKEN || '';
+    if (!token) return res.json({ ok: true, status: 'pending' });
+    const multi = await confirmarPayphoneMulti({ token, storeId: process.env.PAYPHONE_STORE_ID, id: pago.payphone_txn_id ? Number(pago.payphone_txn_id) : undefined, clientTx: clientTxId, loggerPrefix: 'poll' });
+    if (multi.approved) {
+      await procesarPagoAprobado(pago, multi.data);
+      return res.json({ ok: true, status: 'approved', orden: pago.orden });
+    }
+    if (['rejected','canceled','cancelled','failed','declined','error'].includes(multi.statusNorm)) {
+      await liberarReservas(pago.orden_id);
+      await (prisma as any).pagos_payphone.update({ where: { id: pago.id }, data: { status: multi.statusNorm.toUpperCase(), raw: multi.data } });
+      return res.json({ ok: true, status: 'failed' });
     }
     return res.json({ ok: true, status: 'pending' });
   } catch (e) {
