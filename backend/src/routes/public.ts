@@ -25,7 +25,14 @@ async function getPayphoneToken(): Promise<string> {
 }
 
 
-const PAYPHONE_BASE_URL = process.env.PAYPHONE_BASE_URL || 'https://pay.payphonetodoesposible.com';
+const RAW_PAYPHONE_BASE = process.env.PAYPHONE_BASE_URL || 'https://pay.payphonetodoesposible.com';
+// Sanitizar: si alguien dejó sandbox.*, forzamos a pay.* para entorno productivo
+const PAYPHONE_BASE_URL = RAW_PAYPHONE_BASE.includes('sandbox.')
+  ? RAW_PAYPHONE_BASE.replace('sandbox.', 'pay.')
+  : RAW_PAYPHONE_BASE;
+if (RAW_PAYPHONE_BASE !== PAYPHONE_BASE_URL) {
+  console.warn('⚠️  PAYPHONE_BASE_URL contenía sandbox, se reemplazó por:', PAYPHONE_BASE_URL);
+}
 console.log('🔧 PAYPHONE_BASE_URL activo:', PAYPHONE_BASE_URL);
 
 // Forzar IPv4 en VPS que presenten problemas con IPv6/TLS
@@ -80,18 +87,18 @@ async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; i
     'User-Agent': 'Castromotor-Server/1.0 (+https://castromotor.com.ec)'
   } as any;
   type FetchResp = any; // evitar conflicto con tipo Response de Express
-  const recordAttempt = (label: string, resp: FetchResp | null, raw: string | null, parsed: any, error?: any) => {
-    attempts.push({ label, status: resp?.status, ok: !!resp?.ok, rawSnippet: raw ? raw.slice(0,180) : null, parsedKeys: parsed && typeof parsed === 'object' ? Object.keys(parsed) : null, error: error ? (error.message || String(error)) : undefined });
+  const recordAttempt = (label: string, resp: FetchResp | null, raw: string | null, parsed: any, error?: any, meta?: Record<string, any>) => {
+    attempts.push({ label, status: (resp as any)?.status, ok: !!(resp as any)?.ok, rawSnippet: raw ? raw.slice(0,180) : null, parsedKeys: parsed && typeof parsed === 'object' ? Object.keys(parsed) : null, error: error ? (error.message || String(error)) : undefined, ...(meta || {}) });
   };
   const decode = (raw: string) => { try { return JSON.parse(raw); } catch { return { raw }; } };
   // Strategy A: button/V2/Confirm with clientTxId
   try {
     const body = JSON.stringify({ id: opts.id, clientTxId: opts.clientTx });
-    const url = `${PAYPHONE_BASE_URL}/api/button/V2/Confirm`;
-    const resp = await postJson(url, headers, body);
-    const raw = resp.text;
-    const parsed = decode(raw);
-    recordAttempt('button:clientTxId', resp, raw, parsed);
+  const url = `${PAYPHONE_BASE_URL}/api/button/V2/Confirm`;
+  const resp = await postJson(url, headers, body);
+  const raw = resp.text;
+  const parsed = decode(raw);
+  recordAttempt('button:clientTxId', resp as any, raw, parsed, undefined, { url });
     const statusNorm = String(parsed?.transactionStatus || parsed?.status || '').toLowerCase();
     if (resp.ok && statusNorm === 'approved') return { approved: true, pending: false, terminal: true, statusNorm, data: parsed, source: 'button:clientTxId', htmlBody: raw.trim().startsWith('<'), attempts };
     if (['pending','processing','created'].includes(statusNorm)) return { approved: false, pending: true, terminal: false, statusNorm, data: parsed, source: 'button:clientTxId', htmlBody: raw.trim().startsWith('<'), attempts };
@@ -101,11 +108,11 @@ async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; i
   // Strategy B: button/V2/Confirm with clientTransactionId (alternative naming)
   try {
     const body = JSON.stringify({ id: opts.id, clientTransactionId: opts.clientTx });
-    const url = `${PAYPHONE_BASE_URL}/api/button/V2/Confirm`;
-    const resp = await postJson(url, headers, body);
-    const raw = resp.text;
-    const parsed = decode(raw);
-    recordAttempt('button:clientTransactionId', resp, raw, parsed);
+  const url = `${PAYPHONE_BASE_URL}/api/button/V2/Confirm`;
+  const resp = await postJson(url, headers, body);
+  const raw = resp.text;
+  const parsed = decode(raw);
+  recordAttempt('button:clientTransactionId', resp as any, raw, parsed, undefined, { url });
     const statusNorm = String(parsed?.transactionStatus || parsed?.status || '').toLowerCase();
     if (resp.ok && statusNorm === 'approved') return { approved: true, pending: false, terminal: true, statusNorm, data: parsed, source: 'button:clientTransactionId', htmlBody: raw.trim().startsWith('<'), attempts };
     if (['pending','processing','created'].includes(statusNorm)) return { approved: false, pending: true, terminal: false, statusNorm, data: parsed, source: 'button:clientTransactionId', htmlBody: raw.trim().startsWith('<'), attempts };
@@ -115,11 +122,11 @@ async function confirmarPayphoneMulti(opts: { token: string; storeId?: string; i
   if (opts.storeId) {
     try {
       const body = JSON.stringify({ storeId: opts.storeId, clientTransactionId: opts.clientTx });
-      const url = `${PAYPHONE_BASE_URL}/api/Sale/Confirm`;
-      const resp = await postJson(url, headers, body);
-      const raw = resp.text;
-      const parsed = decode(raw);
-      recordAttempt('sale:clientTransactionId', resp, raw, parsed);
+  const url = `${PAYPHONE_BASE_URL}/api/Sale/Confirm`;
+  const resp = await postJson(url, headers, body);
+  const raw = resp.text;
+  const parsed = decode(raw);
+  recordAttempt('sale:clientTransactionId', resp as any, raw, parsed, undefined, { url });
       const statusNorm = String(parsed?.transactionStatus || parsed?.status || '').toLowerCase();
       if (resp.ok && statusNorm === 'approved') return { approved: true, pending: false, terminal: true, statusNorm, data: parsed, source: 'sale:clientTransactionId', htmlBody: raw.trim().startsWith('<'), attempts };
       if (['pending','processing','created'].includes(statusNorm)) return { approved: false, pending: true, terminal: false, statusNorm, data: parsed, source: 'sale:clientTransactionId', htmlBody: raw.trim().startsWith('<'), attempts };
