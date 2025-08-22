@@ -25,7 +25,7 @@ export default function FireParticles({
   className = '' 
 }: FireParticlesProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationRef = useRef<number>();
+  const animationRef = useRef<number | null>(null);
   const particlesRef = useRef<Particle[]>([]);
 
   useEffect(() => {
