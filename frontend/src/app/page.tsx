@@ -102,6 +102,55 @@ type Sorteo = {
 };
 
 export default function HomePage() {
+  // Datos estructurados JSON-LD para SEO
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "CASTROMOTOR SORTEOS",
+    "url": typeof window !== 'undefined' ? window.location.origin : "https://your-domain.com",
+    "description": "Participa en sorteos y rifas online con CASTROMOTOR. Premios increíbles, pagos seguros con Payphone y transferencias bancarias.",
+    "publisher": {
+      "@type": "Organization",
+      "name": "CASTROMOTOR",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "/logo.png"
+      }
+    },
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": {
+        "@type": "EntryPoint",
+        "urlTemplate": "/?q={search_term_string}"
+      },
+      "query-input": "required name=search_term_string"
+    }
+  };
+
+  const organizationData = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "CASTROMOTOR",
+    "alternateName": "CASTROMOTOR SORTEOS",
+    "url": typeof window !== 'undefined' ? window.location.origin : "https://your-domain.com",
+    "logo": "/logo.png",
+    "description": "Empresa especializada en sorteos y rifas online en Ecuador",
+    "contactPoint": {
+      "@type": "ContactPoint",
+      "telephone": "+593-98-130-9202",
+      "contactType": "customer service",
+      "availableLanguage": "Spanish"
+    },
+    "address": {
+      "@type": "PostalAddress",
+      "addressCountry": "EC"
+    },
+    "sameAs": [
+      "https://wa.me/593981309202",
+      "https://facebook.com/castromotor",
+      "https://instagram.com/castromotor"
+    ]
+  };
   const [loading, setLoading] = useState(false);
   const [sorteos, setSorteos] = useState<Sorteo[]>([]);
   const [paquetes, setPaquetes] = useState<any[]>([]);
@@ -294,6 +343,16 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-[#0f1725] text-white">
+      {/* Datos estructurados JSON-LD para SEO */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationData) }}
+      />
+      
       {/* Partículas de fuego de fondo */}
       <FireParticles intensity="low" particleCount={30} />
       
@@ -424,6 +483,49 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Tutorial de compra + Video */}
+      <section id="como-comprar" className="max-w-6xl mx-auto px-6 pb-24 reveal-up">
+        <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-black/40 via-black/30 to-black/40 p-6 md:p-8 shadow-lg relative overflow-hidden">
+          <div className="absolute inset-0 pointer-events-none opacity-40 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.25),transparent_65%)]" />
+          <h2 className="text-2xl font-bold mb-4 section-title">¿Cómo comprar?</h2>
+          <ol className="tutorial-list space-y-2 text-sm text-slate-300">
+            <li>Elige el sorteo que deseas ver. Elige cuántos números (tickets) deseas (¡O selecciona un paquete promocional que ya trae varios números con descuento!).</li>
+            <li>Haz clic en el botón de compra para ir al formulario del sorteo.</li>
+            <li>Completa tus datos personales y escribe tu correo correctamente y número de teléfono CORRECTAMENTE (Te contactaremos por esos medios).</li>
+            <li>Pide tu código de verificación; revisa tu correo e ingresa los 3 dígitos para validarlo.</li>
+            <li>Selecciona un método de pago. Si es transferencia/deposito sube la imagen de tu comprobante de transferencia o deposito. Si es Payphone puedes pagar en línea.</li>
+            <li>Confirma la compra. Recibirás un correo cuando un administrador apruebe tu pago, o en caso de pagar con payphone se te otorga tus numeros automaticamente hayas hecho la compra.</li>
+            <li>Tus números quedarán registrados y te llegarán a tu correo electrónico ingresado; si el sorteo alcanza su meta se realizará con los numeros de la loteria nacional y se publicarán los ganadores.</li>
+          </ol>
+          <div className="mt-8">
+            {(() => {
+              const tutorialLink = process.env.NEXT_PUBLIC_VIDEO_TUTORIAL_URL || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'; // Reemplazar por el link real
+              return (
+                <a
+                  href={tutorialLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ring-pulse group relative inline-flex items-center gap-3 px-8 py-4 rounded-md font-extrabold tracking-wide text-white text-sm md:text-base overflow-hidden focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#0f1725] focus:ring-blue-500 btn-intro"
+                  style={{
+                    background: 'linear-gradient(90deg,#0047ff,#0a84ff)',
+                    boxShadow: '0 0 0 0 rgba(0,119,255,0.6)'
+                  }}
+                >
+                  <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity bg-[linear-gradient(90deg,rgba(255,255,255,0.15),rgba(255,255,255,0))]" />
+                  <span className="relative flex items-center gap-3">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/30 group-hover:scale-110 transition-transform">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+                    </span>
+                    <span className="text-base">VIDEO TUTORIAL DE COMPRA</span>
+                  </span>
+                  <span className="absolute -inset-8 animate-pulse rounded-full bg-blue-500/20 blur-xl" />
+                </a>
+              );
+            })()}
+          </div>
+        </div>
+      </section>
+
       {/* Ganadores - Solo publicaciones configuradas por admin */}
       <section id="ganadores" className="max-w-6xl mx-auto px-6 pb-24">
         <h2 className="text-2xl font-bold mb-4 reveal-up section-title">Ganadores</h2>
@@ -474,55 +576,10 @@ export default function HomePage() {
                 Mantente atento a nuestras redes sociales para conocer a los afortunados ganadores.
               </p>
               
-              <div className="mt-6 text-xs text-slate-500">
-                ¿Eres administrador? Puedes configurar las publicaciones de ganadores desde el panel de administración.
-              </div>
+             
             </div>
           </div>
         )}
-      </section>
-
-      {/* Tutorial de compra + Video */}
-      <section id="como-comprar" className="max-w-6xl mx-auto px-6 pb-24 reveal-up">
-        <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-black/40 via-black/30 to-black/40 p-6 md:p-8 shadow-lg relative overflow-hidden">
-          <div className="absolute inset-0 pointer-events-none opacity-40 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.25),transparent_65%)]" />
-          <h2 className="text-2xl font-bold mb-4 section-title">¿Cómo comprar?</h2>
-          <ol className="tutorial-list space-y-2 text-sm text-slate-300">
-            <li>Elige el sorteo que deseas ver. Elige cuántos números (tickets) deseas (¡O selecciona un paquete promocional que ya trae varios números con descuento!).</li>
-            <li>Haz clic en el botón de compra para ir al formulario del sorteo.</li>
-            <li>Completa tus datos personales y escribe tu correo correctamente y número de teléfono CORRECTAMENTE (Te contactaremos por esos medios).</li>
-            <li>Pide tu código de verificación; revisa tu correo e ingresa los 3 dígitos para validarlo.</li>
-            <li>Selecciona un método de pago. Si es transferencia/deposito sube la imagen de tu comprobante de transferencia o deposito. Si es Payphone puedes pagar en línea.</li>
-            <li>Confirma la compra. Recibirás un correo cuando un administrador apruebe tu pago, o en caso de pagar con payphone se te otorga tus numeros automaticamente hayas hecho la compra.</li>
-            <li>Tus números quedarán registrados y te llegarán a tu correo electrónico ingresado; si el sorteo alcanza su meta se realizará con los numeros de la loteria nacional y se publicarán los ganadores.</li>
-          </ol>
-          <div className="mt-8">
-            {(() => {
-              const tutorialLink = process.env.NEXT_PUBLIC_VIDEO_TUTORIAL_URL || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'; // Reemplazar por el link real
-              return (
-                <a
-                  href={tutorialLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ring-pulse group relative inline-flex items-center gap-3 px-8 py-4 rounded-md font-extrabold tracking-wide text-white text-sm md:text-base overflow-hidden focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#0f1725] focus:ring-blue-500 btn-intro"
-                  style={{
-                    background: 'linear-gradient(90deg,#0047ff,#0a84ff)',
-                    boxShadow: '0 0 0 0 rgba(0,119,255,0.6)'
-                  }}
-                >
-                  <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity bg-[linear-gradient(90deg,rgba(255,255,255,0.15),rgba(255,255,255,0))]" />
-                  <span className="relative flex items-center gap-3">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/30 group-hover:scale-110 transition-transform">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
-                    </span>
-                    <span className="text-base">VIDEO TUTORIAL DE COMPRA</span>
-                  </span>
-                  <span className="absolute -inset-8 animate-pulse rounded-full bg-blue-500/20 blur-xl" />
-                </a>
-              );
-            })()}
-          </div>
-        </div>
       </section>
 
   {/* Social posts debajo del tutorial */}

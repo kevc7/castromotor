@@ -16,11 +16,92 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CASTROMOTOR SORTEOS",
-  description: "Castromotor — Rifas y sorteos",
+  title: {
+    default: "CASTROMOTOR SORTEOS | Rifas y Sorteos Online Ecuador",
+    template: "%s | CASTROMOTOR SORTEOS"
+  },
+  description: "Participa en sorteos y rifas online con CASTROMOTOR. Premios increíbles, pagos seguros con Payphone y transferencias bancarias. ¡Compra tus números y gana en Ecuador!",
+  keywords: [
+    "sorteos", "rifas", "premios", "Ecuador", "castromotor", "sorteos online", 
+    "rifas Ecuador", "pagos seguros", "payphone", "loteria", "concursos", 
+    "premios Ecuador", "rifas online", "sorteos legales"
+  ],
+  authors: [{ name: "CASTROMOTOR" }],
+  creator: "CASTROMOTOR",
+  publisher: "CASTROMOTOR",
+  formatDetection: {
+    email: false,
+    address: false,
+    telephone: false,
+  },
+  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'),
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'es_EC',
+    url: '/',
+    title: 'CASTROMOTOR SORTEOS | Rifas y Sorteos Online Ecuador',
+    description: 'Participa en sorteos y rifas online con CASTROMOTOR. Premios increíbles, pagos seguros con Payphone y transferencias bancarias.',
+    siteName: 'CASTROMOTOR SORTEOS',
+    images: [
+      {
+        url: '/logo.png',
+        width: 1200,
+        height: 630,
+        alt: 'CASTROMOTOR SORTEOS - Rifas y Sorteos Online Ecuador',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'CASTROMOTOR SORTEOS | Rifas y Sorteos Online Ecuador',
+    description: 'Participa en sorteos y rifas online con CASTROMOTOR. Premios increíbles, pagos seguros.',
+    images: ['/logo.png'],
+    creator: '@castromotor',
+  },
+  robots: {
+    index: true,
+    follow: true,
+    nocache: false,
+    googleBot: {
+      index: true,
+      follow: true,
+      noimageindex: false,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: '16x16 32x32', type: 'image/x-icon' },
+      { url: '/favicon.png', sizes: '32x32', type: 'image/png' },
+      { url: '/logo.png', sizes: '192x192', type: 'image/png' },
+    ],
+    shortcut: '/favicon.ico',
+    apple: [
+      { url: '/favicon.png', sizes: '180x180' },
+      { url: '/logo.png', sizes: '192x192' },
+    ],
+    other: [
+      {
+        rel: 'mask-icon',
+        url: '/favicon.png',
+        color: '#AA2F0B',
+      },
+    ],
+  },
+  manifest: '/manifest.json',
   // Meta requerida por Facebook / WhatsApp Business para verificar el dominio
   other: {
-    'facebook-domain-verification': 'bj5dmzuins4o7texoptjewihp04ymd'
+    'facebook-domain-verification': 'bj5dmzuins4o7texoptjewihp04ymd',
+    'theme-color': '#AA2F0B',
+    'color-scheme': 'dark light',
+  },
+  verification: {
+    google: 'google-site-verification-code', // Reemplazar con código real de Google Search Console
   }
 };
 
@@ -30,7 +111,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="es">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <Script src="https://pay.payphonetodoesposible.com/payphone-client/PayPhone.js" strategy="afterInteractive" />
   {/* Logo flotante removido según solicitud */}

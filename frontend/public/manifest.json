@@ -1,0 +1,28 @@
+{
+  "name": "CASTROMOTOR SORTEOS",
+  "short_name": "Castromotor",
+  "description": "Participa en sorteos y rifas online con CASTROMOTOR. Premios increíbles, pagos seguros.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1725",
+  "theme_color": "#AA2F0B",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["entertainment", "games"],
+  "lang": "es",
+  "dir": "ltr"
+}
