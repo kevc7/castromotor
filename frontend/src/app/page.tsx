@@ -424,7 +424,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Ganadores - Publicaciones personalizadas o fallback a tarjetas automáticas */}
+      {/* Ganadores - Solo publicaciones configuradas por admin */}
       <section id="ganadores" className="max-w-6xl mx-auto px-6 pb-24">
         <h2 className="text-2xl font-bold mb-4 reveal-up section-title">Ganadores</h2>
         
@@ -456,37 +456,27 @@ export default function HomePage() {
               );
             })}
           </div>
-        ) : winners.length > 0 ? (
-          // Fallback: mostrar tarjetas automáticas si no hay publicaciones personalizadas
-          <div>
-            <div className="text-sm text-slate-400 mb-4 reveal-up">
-              Mostrando ganadores automáticos. Para personalizar esta sección, 
-              <a href="/admin/social-posts" className="text-blue-400 hover:text-blue-300 ml-1">
-                configura publicaciones de ganadores desde el admin
-              </a>.
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {winners.map((w, idx) => (
-                <div key={idx} className="rounded-xl border border-white/10 bg-white/5 p-4 reveal-up">
-                  <div className="text-sm text-slate-400">{w.sorteo}</div>
-                  <div className="text-lg font-semibold text-white">{w.cliente}</div>
-                  <div className="text-xs text-emerald-400">{w.premio}</div>
-                  <div className="text-xs text-slate-400">Número: #{w.numero}</div>
-                </div>
-              ))}
-            </div>
-          </div>
         ) : (
-          // No hay ganadores ni publicaciones
-          <div className="text-center py-12">
-            <div className="text-sm text-slate-400 reveal-up mb-3">
-              Aún no hay ganadores para mostrar.
-            </div>
-            <div className="text-xs text-slate-500 reveal-up">
-              Los ganadores aparecerán aquí automáticamente o puedes 
-              <a href="/admin/social-posts" className="text-blue-400 hover:text-blue-300 ml-1">
-                configurar publicaciones personalizadas desde el admin
-              </a>.
+          // No hay publicaciones de ganadores configuradas
+          <div className="text-center py-16">
+            <div className="max-w-md mx-auto">
+              <div className="mb-6">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-yellow-500/20 to-orange-500/20 flex items-center justify-center">
+                  <svg className="w-8 h-8 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+              </div>
+              
+              <h3 className="text-xl font-semibold text-white mb-3">¡Pronto mostraremos a los ganadores!</h3>
+              <p className="text-slate-400 text-sm leading-relaxed">
+                Aquí se mostrarán las publicaciones de los ganadores de nuestros sorteos. 
+                Mantente atento a nuestras redes sociales para conocer a los afortunados ganadores.
+              </p>
+              
+              <div className="mt-6 text-xs text-slate-500">
+                ¿Eres administrador? Puedes configurar las publicaciones de ganadores desde el panel de administración.
+              </div>
             </div>
           </div>
         )}
