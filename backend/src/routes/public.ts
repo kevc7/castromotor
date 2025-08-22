@@ -1,4 +1,3 @@
-
 // ...existing code...
 
 import { Router, type Request, type Response, type NextFunction } from "express";
@@ -374,8 +373,8 @@ publicRouter.post('/payments/payphone/init', async (req: Request, res: Response,
       // URLs de respuesta
     // URL configurada en el panel de Payphone para recibir notificaciones de estado
     responseUrl: `https://castromotor.com.ec/api/checkout/payphone/webhook`,
-    // Si el usuario cierra o cancela desde Payphone, lo enviamos de vuelta al checkout para que pueda reintentar
-    cancellationUrl: `${process.env.FRONTEND_URL}/checkout/${body.sorteo_id}?resultado=payphone_fail&reason=cancelado_usuario`,
+    // Si el usuario cierra o cancela desde Payphone, lo enviamos de vuelta al checkout con datos para cancelar orden
+    cancellationUrl: `${process.env.FRONTEND_URL}/checkout/${body.sorteo_id}?resultado=payphone_fail&reason=cancelado_usuario&orden=${encodeURIComponent(codigo)}&ordenId=${orden.id}&clientTx=${encodeURIComponent(clientTxnId)}`,
     };
 
     console.log('✅ [Payphone INIT] Configuración generada:', {
@@ -858,18 +857,8 @@ publicRouter.post('/payments/payphone/confirm', async (req: Request, res: Respon
     
     if (!success) {
       console.log('❌ Pago no aprobado, liberando reservas y marcando orden rechazada');
-      // liberar reservas y marcar orden rechazada si falló
-      await prisma.$transaction(async (tx) => {
-        await tx.numeros_sorteo.updateMany({ 
-          where: { orden_id: orden.id, estado: 'reservado' }, 
-          data: { estado: 'disponible', orden_id: null } 
-        });
-        await tx.ordenes.update({ 
-          where: { id: orden.id }, 
-          data: { estado_pago: 'rechazado' } 
-        });
-      });
-      
+      // liberar + marcar rechazada + correo
+      await rechazarOrden(orden.id, 'rechazado_confirm');
       await (prisma as any).pagos_payphone.update({ 
         where: { id: pago.id }, 
         data: { status: 'FAILED', raw: data, failed_at: new Date() } 
@@ -1738,5 +1727,38 @@ publicRouter.get("/orders/:id", async (req, res, next) => {
     next(e);
   }
 });
+
+// Cancelar orden + correo
+async function cancelarOrden(ordenId: bigint, motivo: string) {
+  const orden: any = await prisma.ordenes.findUnique({ where: { id: ordenId }, include: { cliente: true, sorteo: true } });
+  if (!orden) return;
+  await prisma.$transaction(async (tx) => {
+    await tx.numeros_sorteo.updateMany({ where: { orden_id: ordenId, estado: 'reservado' }, data: { estado: 'disponible', orden_id: null } });
+    await tx.ordenes.update({ where: { id: ordenId }, data: { estado_pago: 'cancelado' } });
+  });
+  if (orden?.cliente?.correo_electronico) {
+    try {
+      const { sendMail } = await import('../utils/mailer');
+      const { correoCancelacion } = await import('../emails/templates');
+      const html = correoCancelacion({ clienteNombre: orden.cliente.nombres || '', codigo: orden.codigo, sorteoNombre: orden.sorteo?.nombre, motivo, logoUrl: process.env.BRAND_LOGO_URL || null, year: new Date().getFullYear() });
+      await sendMail({ to: orden.cliente.correo_electronico, subject: `Orden ${orden.codigo} cancelada`, html });
+    } catch (e) { console.error('Correo cancelación falló:', e); }
+  }
+}
+
+// Rechazar orden (liberar reservas + estado rechazada) y correo
+async function rechazarOrden(ordenId: bigint, motivo: string) {
+  const orden: any = await prisma.ordenes.findUnique({ where: { id: ordenId }, include: { cliente: true, sorteo: true } });
+  if (!orden) return;
+  await liberarReservas(ordenId);
+  if (orden?.cliente?.correo_electronico) {
+    try {
+      const { sendMail } = await import('../utils/mailer');
+      const { correoRechazo } = await import('../emails/templates');
+      const html = correoRechazo({ clienteNombre: orden.cliente.nombres || '', codigo: orden.codigo, sorteoNombre: orden.sorteo?.nombre, motivo, logoUrl: process.env.BRAND_LOGO_URL || null, year: new Date().getFullYear() });
+      await sendMail({ to: orden.cliente.correo_electronico, subject: `Orden ${orden.codigo} rechazada`, html });
+    } catch (e) { console.error('Correo rechazo falló:', e); }
+  }
+}
 
 

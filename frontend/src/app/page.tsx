@@ -102,55 +102,6 @@ type Sorteo = {
 };
 
 export default function HomePage() {
-  // Datos estructurados JSON-LD para SEO
-  const structuredData = {
-    "@context": "https://schema.org",
-    "@type": "WebSite",
-    "name": "CASTROMOTOR SORTEOS",
-    "url": typeof window !== 'undefined' ? window.location.origin : "https://your-domain.com",
-    "description": "Participa en sorteos y rifas online con CASTROMOTOR. Premios increíbles, pagos seguros con Payphone y transferencias bancarias.",
-    "publisher": {
-      "@type": "Organization",
-      "name": "CASTROMOTOR",
-      "logo": {
-        "@type": "ImageObject",
-        "url": "/logo.png"
-      }
-    },
-    "potentialAction": {
-      "@type": "SearchAction",
-      "target": {
-        "@type": "EntryPoint",
-        "urlTemplate": "/?q={search_term_string}"
-      },
-      "query-input": "required name=search_term_string"
-    }
-  };
-
-  const organizationData = {
-    "@context": "https://schema.org",
-    "@type": "Organization",
-    "name": "CASTROMOTOR",
-    "alternateName": "CASTROMOTOR SORTEOS",
-    "url": typeof window !== 'undefined' ? window.location.origin : "https://your-domain.com",
-    "logo": "/logo.png",
-    "description": "Empresa especializada en sorteos y rifas online en Ecuador",
-    "contactPoint": {
-      "@type": "ContactPoint",
-      "telephone": "+593-98-130-9202",
-      "contactType": "customer service",
-      "availableLanguage": "Spanish"
-    },
-    "address": {
-      "@type": "PostalAddress",
-      "addressCountry": "EC"
-    },
-    "sameAs": [
-      "https://wa.me/593981309202",
-      "https://facebook.com/castromotor",
-      "https://instagram.com/castromotor"
-    ]
-  };
   const [loading, setLoading] = useState(false);
   const [sorteos, setSorteos] = useState<Sorteo[]>([]);
   const [paquetes, setPaquetes] = useState<any[]>([]);
@@ -343,23 +294,16 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-[#0f1725] text-white">
-      {/* Datos estructurados JSON-LD para SEO */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
-      />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationData) }}
-      />
+      {/* Datos estructurados JSON-LD para SEO - Renderizado solo en cliente */}
+      <StructuredData />
       
       {/* Partículas de fuego de fondo */}
       <FireParticles intensity="low" particleCount={30} />
       
       {/* Navbar fijo siempre arriba */}
-      <nav className="fixed top-0 left-0 w-full z-50 bg-[#0f1725]/90 backdrop-blur supports-[backdrop-filter]:bg-[#0f1725]/60 border-b border-white/10">
+      <nav className="fixed top-0 left-0 w-full z-50 bg-[#0f1725]/90 backdrop-blur supports-[backdrop-filter]:bg-[#0f1725]/60 border-b border-white/10 home-navbar">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between pl-20 sm:pl-24 md:pl-32">
-          <div className="text-sm text-white/80">Castromotor</div>
+          <div className="text-sm text-white/80 brand">Castromotor</div>
           <div className="flex items-center gap-4 text-sm">
             <a href="#ganadores" className="text-white/80 hover:text-white">Ganadores</a>
             <a href="#sorteos-premiados" className="text-white/80 hover:text-white">Sorteos</a>
@@ -367,13 +311,24 @@ export default function HomePage() {
         </div>
       </nav>
       {/* Hero */}
-      <section className="relative overflow-hidden pt-20 sm:pt-24">
+      <section className="relative overflow-hidden pt-20 sm:pt-24 reveal-up is-visible">
         <div className="absolute inset-0 bg-gradient-to-b from-[#0f1725] via-[#111827] to-[#0f1725] hero-bg" />
         <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 pb-6 sm:pb-8 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 items-center">
           <div className="reveal-up fade-stagger">
             <h1 className="text-4xl md:text-5xl font-extrabold leading-tight animate-title">
-              ¡Compra tus <span className="glow-pulse">tickets</span> ahora!<br />
-              <span className="glow-pulse" style={{ color: '#AA2F0B' }}>Promos por tiempo limitado</span>
+              <span className="wave-text">
+                {"¡Compra tus ".split("").map((ch, i) => (
+                  <span key={`p-${i}`} className="wave-letter" style={{ animationDelay: `${i * 0.06}s` }}>{ch === " " ? '\u00A0' : ch}</span>
+                ))}
+                {"tickets".split("").map((ch, i) => (
+                  <span key={`m-${i}`} className="wave-letter glow-pulse" style={{ animationDelay: `${("¡Compra tus ".length + i) * 0.06}s` }}>{ch}</span>
+                ))}
+                {" ahora!".split("").map((ch, i) => (
+                  <span key={`s-${i}`} className="wave-letter" style={{ animationDelay: `${("¡Compra tus ".length + "tickets".length + i) * 0.06}s` }}>{ch === " " ? '\u00A0' : ch}</span>
+                ))}
+              </span>
+              <br className="hidden md:block" />
+              <span className="glow-pulse" style={{ color: '#DC6B16' }}>Promos por tiempo limitado</span>
             </h1>
             <p className="mt-4 text-slate-300 fade-in-up">Elige tu sorteo favorito, compra tickets o ahorra con paquetes especiales. ¡Las cantidades vuelan!</p>
             <div className="mt-6 flex gap-3 fade-in-up">
@@ -383,7 +338,7 @@ export default function HomePage() {
               </Link>
             </div>
           </div>
-          <div className="reveal-up flex items-center justify-center">
+          <div className="reveal-up flex items-center justify-center zoom-in">
             <div className="relative w-full h-full max-h-[480px] rounded-2xl overflow-hidden border border-white/10 shadow-xl group">
               <img
                 src="/castromotorgif.gif"
@@ -429,7 +384,7 @@ export default function HomePage() {
       {/* Navbar simple (removido - tenemos navbar fijo arriba) */}
 
       {/* Sección: sorteos y números premiados (uno debajo del otro y a ancho completo) */}
-      <section id="sorteos-premiados" className="max-w-6xl mx-auto px-6 pb-20">
+      <section id="sorteos-premiados" className="max-w-6xl mx-auto px-6 pb-20 reveal-up">
   <h2 className="text-2xl font-bold mb-4 reveal-up section-title">Sorteos y números premiados</h2>
         <div className="space-y-6">
           {ganadores.map((s) => {
@@ -527,7 +482,7 @@ export default function HomePage() {
       </section>
 
       {/* Ganadores - Solo publicaciones configuradas por admin */}
-      <section id="ganadores" className="max-w-6xl mx-auto px-6 pb-24">
+      <section id="ganadores" className="max-w-6xl mx-auto px-6 pb-24 reveal-up">
         <h2 className="text-2xl font-bold mb-4 reveal-up section-title">Ganadores</h2>
         
         {ganadoresPosts.length > 0 ? (
@@ -583,10 +538,10 @@ export default function HomePage() {
       </section>
 
   {/* Social posts debajo del tutorial */}
-  <SocialSection />
+  <div className="reveal-up"><SocialSection /></div>
 
       {/* Footer */}
-      <footer className="bg-black/20 border-t border-white/10 mt-20">
+      <footer className="bg-black/20 border-t border-white/10 mt-20 home-footer">
         <div className="max-w-6xl mx-auto px-6 py-12">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {/* Información de la empresa */}
@@ -596,11 +551,11 @@ export default function HomePage() {
                   <span className="text-white font-bold text-lg">C</span>
                 </div>
                 <div>
-                  <div className="font-bold text-white">Castromotor</div>
-                  <div className="text-sm text-slate-400">Sorteos</div>
+                  <div className="font-bold text-white title">Castromotor</div>
+                  <div className="text-sm text-slate-400 muted">Sorteos</div>
                 </div>
               </div>
-              <p className="text-sm text-slate-300">
+              <p className="text-sm text-slate-300 muted">
                 Tu destino para sorteos emocionantes y premios increíbles. 
                 Compra tickets y participa en nuestros sorteos exclusivos.
               </p>
@@ -608,15 +563,15 @@ export default function HomePage() {
 
             {/* Enlaces rápidos */}
             <div className="space-y-4">
-              <h3 className="font-semibold text-white">Enlaces rápidos</h3>
+              <h3 className="font-semibold text-white title">Enlaces rápidos</h3>
               <div className="space-y-2">
-                <a href="#sorteos-premiados" className="block text-sm text-slate-300 hover:text-white transition-colors">
+                <a href="#sorteos-premiados" className="block text-sm text-slate-300 hover:text-white transition-colors muted">
                   Sorteos disponibles
                 </a>
-                <a href="#ganadores" className="block text-sm text-slate-300 hover:text-white transition-colors">
+                <a href="#ganadores" className="block text-sm text-slate-300 hover:text-white transition-colors muted">
                   Ganadores
                 </a>
-                <a href="/admin" className="block text-sm text-slate-300 hover:text-white transition-colors">
+                <a href="/admin" className="block text-sm text-slate-300 hover:text-white transition-colors muted">
                   Panel administrativo
                 </a>
               </div>
@@ -624,13 +579,13 @@ export default function HomePage() {
 
             {/* Información de contacto */}
             <div className="space-y-4">
-              <h3 className="font-semibold text-white">Contacto</h3>
+              <h3 className="font-semibold text-white title">Contacto</h3>
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
                   <svg className="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
-                  <a href="tel:+593981309202" className="text-sm text-slate-300 hover:text-white transition-colors">
+                  <a href="tel:+593981309202" className="text-sm text-slate-300 hover:text-white transition-colors muted">
                     +593 98 130 9202
                   </a>
                 </div>
@@ -638,7 +593,7 @@ export default function HomePage() {
                   <svg className="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
-                  <a href="mailto:info@castromotor.com.ec" className="text-sm text-slate-300 hover:text-white transition-colors">
+                  <a href="mailto:info@castromotor.com.ec" className="text-sm text-slate-300 hover:text-white transition-colors muted">
                     info@castromotor.com.ec
                   </a>
                 </div>
@@ -647,7 +602,7 @@ export default function HomePage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  <span className="text-sm text-slate-300">
+                  <span className="text-sm text-slate-300 muted">
                     Ecuador
                   </span>
                 </div>
@@ -656,7 +611,7 @@ export default function HomePage() {
 
             {/* Redes sociales */}
             <div className="space-y-4">
-              <h3 className="font-semibold text-white">Síguenos</h3>
+              <h3 className="font-semibold text-white title">Síguenos</h3>
               <div className="flex gap-3">
                 <a href="https://wa.me/593981309202" target="_blank" rel="noopener noreferrer" className="w-10 h-10 bg-green-600 hover:bg-green-700 rounded-lg flex items-center justify-center transition-colors">
                   <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
@@ -680,16 +635,91 @@ export default function HomePage() {
           {/* Línea divisoria */}
           <div className="border-t border-white/10 mt-8 pt-8">
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-              <div className="text-sm text-slate-400">
+              <div className="text-sm text-slate-400 muted">
                 © 2025 Castromotor Sorteos. Todos los derechos reservados.
               </div>
               <div className="flex gap-6 text-sm">
-                <a href="#" className="text-slate-400 hover:text-white transition-colors">¡Buena suerte!</a>
+                <a href="#" className="text-slate-400 hover:text-white transition-colors muted">¡Buena suerte!</a>
               </div>
             </div>
           </div>
       </div>
       </footer>
     </main>
+  );
+}
+
+// Componente para datos estructurados JSON-LD - Solo se renderiza en el cliente
+function StructuredData() {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return null; // No renderizar nada en el servidor
+  }
+
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "CASTROMOTOR SORTEOS",
+    "url": "https://castromotor.com.ec",
+    "description": "Participa en sorteos y rifas online con CASTROMOTOR. Premios increíbles, pagos seguros con Payphone y transferencias bancarias.",
+    "publisher": {
+      "@type": "Organization",
+      "name": "CASTROMOTOR",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://castromotor.com.ec/logo.png"
+      }
+    },
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": {
+        "@type": "EntryPoint",
+        "urlTemplate": "https://castromotor.com.ec/?q={search_term_string}"
+      },
+      "query-input": "required name=search_term_string"
+    }
+  };
+
+  const organizationData = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "CASTROMOTOR",
+    "alternateName": "CASTROMOTOR SORTEOS",
+    "url": "https://castromotor.com.ec",
+    "logo": "https://castromotor.com.ec/logo.png",
+    "description": "Empresa especializada en sorteos y rifas online en Ecuador",
+    "contactPoint": {
+      "@type": "ContactPoint",
+      "telephone": "+593-98-130-9202",
+      "contactType": "customer service",
+      "availableLanguage": "Spanish"
+    },
+    "address": {
+      "@type": "PostalAddress",
+      "addressCountry": "EC"
+    },
+    "sameAs": [
+      "https://wa.me/593981309202",
+      "https://facebook.com/castromotor",
+      "https://instagram.com/castromotor"
+    ]
+  };
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationData) }}
+      />
+    </>
   );
 }

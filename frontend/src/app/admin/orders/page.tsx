@@ -33,6 +33,9 @@ export default function AdminOrdersPage() {
   // Estados de carga para cada orden
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [processingOrder, setProcessingOrder] = useState<string | null>(null);
+  // Filtro: por defecto mostrar solo transferencias; con checkbox mostrar solo Payphone
+  const [soloPayphone, setSoloPayphone] = useState(false);
+  const [showPayphoneInfo, setShowPayphoneInfo] = useState(false);
 
   // Función para mostrar mensajes temporales
   const showMessage = (type: 'success' | 'error', message: string) => {
@@ -236,6 +239,13 @@ export default function AdminOrdersPage() {
               {loading && <LoadingSpinner size="sm" />}
               {loading ? 'Actualizando...' : 'Refrescar'}
             </button>
+            {viewMode==='pendientes' && (
+              <div className="flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-2">
+                <input id="soloPayphone" type="checkbox" checked={soloPayphone} onChange={e=>setSoloPayphone(e.target.checked)} />
+                <label htmlFor="soloPayphone" className="text-sm text-slate-300 select-none">Crédito/Débito (Payphone)</label>
+                <button type="button" onClick={()=>setShowPayphoneInfo(true)} className="ml-1 text-xs px-2 py-1 rounded-md bg-white/10 hover:bg-white/20">Info</button>
+              </div>
+            )}
             {viewMode==='historial' && (
               <>
                 <div className="flex flex-col">
@@ -336,7 +346,7 @@ export default function AdminOrdersPage() {
           {!loading && viewMode==='historial' && filteredHistorial.length === 0 && (
             <div className="text-center py-8 text-slate-400"><div className="text-4xl mb-2">🗂️</div><div className="text-sm">Sin resultados para los filtros.</div></div>
           )}
-          {(viewMode==='pendientes' ? ordenes : filteredHistorial).map((o) => {
+          {(viewMode==='pendientes' ? ordenes.filter(o => soloPayphone ? ((o.metodo_pago||'').toLowerCase()==='payphone') : ((o.metodo_pago||'').toLowerCase()!=='payphone')) : filteredHistorial).map((o) => {
             const orderKey = String(o.id);
             const isProcessing = loadingStates[orderKey] || processingOrder === orderKey;
             const isDisabled = isProcessing || processingOrder !== null;
@@ -359,7 +369,7 @@ export default function AdminOrdersPage() {
                     >
                       {String(openId) === orderKey ? 'Ocultar' : 'Ver detalles'}
                     </button>
-                    {viewMode==='pendientes' && (
+                    {viewMode==='pendientes' && ((o.metodo_pago||'').toLowerCase()!=='payphone') && (
                       <>
                         <button 
                           onClick={() => aprobar(o.id)} 
@@ -377,6 +387,9 @@ export default function AdminOrdersPage() {
                           Rechazar
                         </button>
                       </>
+                    )}
+                    {viewMode==='pendientes' && ((o.metodo_pago||'').toLowerCase()==='payphone') && (
+                      <div className="text-xs text-slate-400">Payphone controla aprobación automáticamente</div>
                     )}
                   </div>
                 </div>
@@ -458,6 +471,20 @@ export default function AdminOrdersPage() {
           </div>
         </div>
       )}
+
+      {showPayphoneInfo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowPayphoneInfo(false)} />
+          <div className="relative w-full max-w-md mx-4 rounded-2xl border border-white/10 bg-white/5 p-5 text-white shadow-xl">
+            <div className="text-lg font-semibold mb-1">Órdenes Payphone</div>
+            <p className="text-sm text-slate-300">Las órdenes con método <strong>Crédito/Débito (Payphone)</strong> se aprueban o rechazan automáticamente según la respuesta del gateway. Si el cliente cierra la cajita o expira el tiempo, la orden se marca y se notifica por correo.</p>
+            <div className="mt-3 text-right">
+              <button onClick={()=>setShowPayphoneInfo(false)} className="px-3 py-2 rounded-md border border-white/10 bg-white/10 hover:bg-white/20 text-sm">Entendido</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }

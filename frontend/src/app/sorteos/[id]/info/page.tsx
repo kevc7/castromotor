@@ -141,12 +141,12 @@ export default function SorteoInfoPage() {
           <div className="text-sm text-slate-400">Cargando…</div>
         ) : (
           <>
-            <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-center drop-shadow-sm">
+            <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-center drop-shadow-sm reveal-up">
               {data?.sorteo?.nombre}
             </h1>
             {/* Carrusel de imágenes */}
             {imagenes && imagenes.length > 0 ? (
-              <div className="mt-4 w-full rounded-xl overflow-hidden border border-white/10 bg-black/30">
+              <div className="mt-4 w-full rounded-xl overflow-hidden border border-white/10 bg-black/30 reveal-up zoom-in">
                 <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
                   <Carousel images={imagenes} />
                 </div>
@@ -156,10 +156,10 @@ export default function SorteoInfoPage() {
                 No hay imágenes para mostrar
               </div>
             )}
-            <p className="text-lg sm:text-xl text-slate-100/90 mt-3 tracking-wide leading-relaxed drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)]">{data?.sorteo?.descripcion}</p>
+            <p className="text-lg sm:text-xl text-slate-100/90 mt-3 tracking-wide leading-relaxed drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)] reveal-up">{data?.sorteo?.descripcion}</p>
             <div className="mt-4 text-sm text-slate-200">Precio por número: ${Number(data?.sorteo?.precio_por_numero || 0).toFixed(2)}</div>
             {conteos && (
-              <div className="mt-4">
+              <div className="mt-4 reveal-up">
                 <div className="relative progress-container-animated">
                   <div className="progress-bar-track" style={{height:'2.3rem'}}>
                     {(() => {
@@ -184,7 +184,7 @@ export default function SorteoInfoPage() {
 
             {/* Premios (números premiados) */}
             {Array.isArray(data?.premios) && data.premios.length > 0 && (
-              <section className="mt-8">
+              <section className="mt-8 reveal-up fade-stagger">
                 <h2 className="text-xl font-semibold mb-3">Premios</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   {data.premios.map((p: any) => (
@@ -237,7 +237,7 @@ export default function SorteoInfoPage() {
             ) : (
               <>
                 {/* Paquetes promocionales primero */}
-                <section className="mt-8">
+                <section className="mt-8 reveal-up fade-stagger">
                   <h2 className="text-xl font-semibold mb-3">Paquetes promocionales</h2>
                   {Array.isArray(data?.paquetes) && data.paquetes.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -280,34 +280,36 @@ export default function SorteoInfoPage() {
                 </section>
 
                 {/* Compra por cantidad después de paquetes */}
-                <div className="mt-8 flex flex-wrap items-center gap-3">
-                  <label className="flex items-center gap-2">
-                    <span className="text-sm text-slate-300">Cantidad</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={cantidadPref}
-                      onChange={(e) => {
-                        const val = Math.max(1, Number(e.target.value || 1));
-                        setCantidadPref(val);
-                        const disponibles = (conteos?.disponibles ?? (conteos?.total || 0) - (conteos?.vendidos || 0)) as number;
-                        if (disponibles && val > disponibles) {
-                          setCantidadMsg(`Solo quedan ${disponibles} números disponibles`);
-                        } else {
-                          setCantidadMsg(null);
-                        }
-                      }}
-                      className="w-24 border border-white/10 bg-black/40 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-rose-500/60 transition shadow-sm"
-                    />
-                  </label>
-                  <button
-                    onClick={() => router.push(`/checkout/${id}?cantidad=${cantidadPref}`)}
-                    disabled={Boolean(cantidadMsg)}
-                    className={`px-5 py-2 rounded-md text-white font-medium tracking-wide shadow-md transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#0f1725] focus:ring-rose-500 ${cantidadMsg ? 'bg-rose-900/50 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-500 active:scale-[.97]'}`}
-                  >
-                    Comprar por cantidad
-                  </button>
-                  {cantidadMsg && <span className="text-xs text-amber-300 animate-pulse">{cantidadMsg}</span>}
+                <div className="mt-8 flex flex-col items-center gap-4 reveal-up">
+                  <div className="flex flex-wrap items-center justify-center gap-3">
+                    <label className="flex items-center gap-2">
+                      <span className="text-sm text-slate-300">Cantidad</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={cantidadPref}
+                        onChange={(e) => {
+                          const val = Math.max(1, Number(e.target.value || 1));
+                          setCantidadPref(val);
+                          const disponibles = (conteos?.disponibles ?? (conteos?.total || 0) - (conteos?.vendidos || 0)) as number;
+                          if (disponibles && val > disponibles) {
+                            setCantidadMsg(`Solo quedan ${disponibles} números disponibles`);
+                          } else {
+                            setCantidadMsg(null);
+                          }
+                        }}
+                        className="w-24 border border-white/10 bg-black/40 rounded-md px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-rose-500/60 transition shadow-sm"
+                      />
+                    </label>
+                    <button
+                      onClick={() => router.push(`/checkout/${id}?cantidad=${cantidadPref}`)}
+                      disabled={Boolean(cantidadMsg)}
+                      className={`px-5 py-2 rounded-md text-white font-medium tracking-wide shadow-md transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#0f1725] focus:ring-rose-500 ${cantidadMsg ? 'bg-rose-900/50 cursor-not-allowed' : 'bg-rose-600 hover:bg-rose-500 active:scale-[.97]'}`}
+                    >
+                      Comprar por cantidad
+                    </button>
+                  </div>
+                  {cantidadMsg && <span className="text-xs text-amber-300 animate-pulse text-center">{cantidadMsg}</span>}
                 </div>
 
                 {/* Botón de video tutorial */}
@@ -338,7 +340,7 @@ export default function SorteoInfoPage() {
             )}
 
             {/* Cómo participar */}
-            <section className="mt-10 p-5 sm:p-7 rounded-2xl glassy-como border border-brand-gradient shadow-xl relative overflow-hidden">
+            <section className="mt-10 p-5 sm:p-7 rounded-2xl glassy-como border border-brand-gradient shadow-xl relative overflow-hidden reveal-up">
               <h2 className="text-2xl font-extrabold mb-3 section-title-brand">¿Cómo participar?</h2>
               <ol className="space-y-2 text-base como-list" style={{listStyle: 'none'}}>
                 <li>Elige cuántos números deseas (¡O selecciona un paquete promocional que ya trae varios números con descuento!).</li>
