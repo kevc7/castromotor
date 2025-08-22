@@ -6,14 +6,21 @@ function normalizeFacebookUrl(raw: string): string {
     const u = new URL(raw);
     // Remove tracking params/fragments
     u.hash = '';
-    ['rdid','ref','mibextid','locale','__cft__','__tn__'].forEach(p => u.searchParams.delete(p));
+    ['rdid','ref','mibextid','locale','__cft__','__tn__','igsh'].forEach(p => u.searchParams.delete(p));
     const path = u.pathname;
-    // /{pageId}/posts/{postId}/ -> keep
+    
+    // New format: /share/p/{postId}/ -> keep as is (Facebook handles this format)
+    const shareMatch = path.match(/\/share\/p\/([A-Za-z0-9_-]+)/);
+    if (shareMatch) return `https://www.facebook.com/share/p/${shareMatch[1]}/`;
+    
+    // Classic format: /{pageId}/posts/{postId}/ -> keep
     const postsMatch = path.match(/\/(\d+|[A-Za-z0-9_.-]+)\/posts\/(\d+)/);
     if (postsMatch) return `https://www.facebook.com/${postsMatch[1]}/posts/${postsMatch[2]}/`;
+    
     // photo fbid param
     const fbid = u.searchParams.get('fbid');
     if (path.startsWith('/photo') && fbid) return `https://www.facebook.com/photo/?fbid=${fbid}`;
+    
     return u.toString();
   } catch { return raw; }
 }

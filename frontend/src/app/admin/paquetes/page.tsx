@@ -21,6 +21,9 @@ export default function AdminPaquetesPage() {
   const [paquetes, setPaquetes] = useState<Paquete[]>([]);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ nombre: "", descripcion: "", cantidad_numeros: 5, porcentaje_descuento: 0, precio_total: 0 });
+  const [disponibles, setDisponibles] = useState<number | null>(null);
+  const [errCantidad, setErrCantidad] = useState<string | null>(null);
+  const [errDescuento, setErrDescuento] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   async function cargarSorteos() {
@@ -52,12 +55,77 @@ export default function AdminPaquetesPage() {
   }, []);
 
   useEffect(() => {
-    if (sorteoId) cargarPaquetes(sorteoId);
+    if (sorteoId) {
+      cargarPaquetes(sorteoId);
+      // Cargar conteos para validar límite de cantidad disponible
+      (async () => {
+        try {
+          const res = await fetch(`${API_BASE}/api/sorteos/${sorteoId}`);
+          const data = await res.json();
+          const c = data?.conteos;
+          const disp = typeof c?.disponibles === 'number' ? c.disponibles : ((c?.total || 0) - (c?.vendidos || 0));
+          setDisponibles(Math.max(0, Number(disp || 0)));
+        } catch {
+          setDisponibles(null);
+        }
+      })();
+    }
   }, [sorteoId]);
+
+  function sanitizeCantidad(raw: string) {
+    const digits = raw.replace(/\D/g, "");
+    if (digits === "") return ""; // permite borrar para reescribir
+    return String(Math.max(1, Number(digits)));
+  }
+  function sanitizeDescuento(raw: string) {
+    const digits = raw.replace(/\D/g, "");
+    if (digits === "") return "";
+    const n = Math.max(0, Math.min(100, Number(digits)));
+    return String(n);
+  }
+
+  function onCantidadChange(raw: string) {
+    const valStr = sanitizeCantidad(raw);
+    let n = Number(valStr || 0);
+    let err: string | null = null;
+    if (valStr === "") {
+      setForm({ ...form, cantidad_numeros: 0 });
+      setErrCantidad('Ingresa una cantidad válida');
+      return;
+    }
+    if (disponibles !== null && n > disponibles) {
+      n = disponibles;
+      err = `No puede superar los disponibles (${disponibles})`;
+    }
+    if (n < 1) err = 'Debe ser al menos 1';
+    setForm({ ...form, cantidad_numeros: n });
+    setErrCantidad(err);
+  }
+
+  function onDescuentoChange(raw: string) {
+    const valStr = sanitizeDescuento(raw);
+    if (valStr === "") {
+      setForm({ ...form, porcentaje_descuento: 0 });
+      setErrDescuento('Ingresa un porcentaje válido (0–100)');
+      return;
+    }
+    const n = Math.max(0, Math.min(100, Number(valStr)));
+    setForm({ ...form, porcentaje_descuento: n });
+    setErrDescuento(null);
+  }
+
+  const invalid = (
+    !sorteoId ||
+    form.cantidad_numeros < 1 ||
+    (disponibles !== null && form.cantidad_numeros > disponibles) ||
+    form.porcentaje_descuento < 0 || form.porcentaje_descuento > 100 ||
+    Boolean(errCantidad) || Boolean(errDescuento)
+  );
 
   async function crearPaquete(e: React.FormEvent) {
     e.preventDefault();
     if (!sorteoId) return;
+    if (invalid) { setMsg('Corrige los campos marcados antes de crear el paquete'); return; }
     setMsg(null);
     const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
     const res = await fetch(`${API_BASE}/api/admin/sorteos/${sorteoId}/paquetes`, {
@@ -139,15 +207,37 @@ export default function AdminPaquetesPage() {
           <div className="grid grid-cols-2 gap-3">
             <label className="grid gap-1">
               <span className="text-xs text-slate-400">Cantidad de números</span>
-              <input type="number" min={1} className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" value={form.cantidad_numeros} onChange={(e) => setForm({ ...form, cantidad_numeros: Number(e.target.value) })} />
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="\\d*"
+                className={`border rounded-md px-3 py-2 text-white bg-black/30 ${errCantidad ? 'border-rose-500/50 ring-1 ring-rose-500/40' : 'border-white/10'}`}
+                value={form.cantidad_numeros || ''}
+                onChange={(e) => onCantidadChange(e.target.value)}
+                placeholder="Ej. 5"
+              />
+              <div className="text-[11px] text-slate-400">
+                {disponibles !== null ? `Máximo disponible: ${disponibles}` : 'Cargando disponibles…'}
+              </div>
+              {errCantidad && <span className="text-[11px] text-rose-400">{errCantidad}</span>}
             </label>
             <label className="grid gap-1">
               <span className="text-xs text-slate-400">% Descuento</span>
-              <input type="number" min={0} max={100} className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" value={form.porcentaje_descuento} onChange={(e) => setForm({ ...form, porcentaje_descuento: Number(e.target.value) })} />
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="\\d*"
+                className={`border rounded-md px-3 py-2 text-white bg-black/30 ${errDescuento ? 'border-rose-500/50 ring-1 ring-rose-500/40' : 'border-white/10'}`}
+                value={form.porcentaje_descuento || ''}
+                onChange={(e) => onDescuentoChange(e.target.value)}
+                placeholder="0–100"
+                maxLength={3}
+              />
+              {errDescuento && <span className="text-[11px] text-rose-400">{errDescuento}</span>}
             </label>
           </div>
           <AutoPrecio sorteoId={sorteoId} cantidad={form.cantidad_numeros} descuento={form.porcentaje_descuento} />
-          <button onClick={crearPaquete} className="px-4 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-700">Crear paquete</button>
+          <button onClick={crearPaquete} disabled={invalid} className={`px-4 py-2 rounded-md ${invalid ? 'bg-emerald-700/50 opacity-60 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'} text-white`}>Crear paquete</button>
           {msg && <div className="text-sm text-slate-300">{msg}</div>}
         </section>
 

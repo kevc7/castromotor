@@ -226,10 +226,11 @@ model social_posts {
   id             BigInt   @id @default(autoincrement())
   platform       String   // 'facebook' | 'instagram'
   url            String
+  tipo           String   @default("social") // 'social' | 'ganador'
   orden          Int      @default(0)
   activo         Boolean  @default(true)
   fecha_creacion DateTime @default(now())
 
-  @@index([activo, orden])
+  @@index([activo, orden, tipo])
   @@map("social_posts")
 }

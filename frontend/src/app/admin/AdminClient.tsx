@@ -321,15 +321,42 @@ export default function AdminClient() {
             {errorMsg && (
               <div className="rounded-lg border border-red-500/30 bg-red-500/10 text-red-200 px-4 py-2 text-sm">{errorMsg}</div>
             )}
-            <form onSubmit={crearSorteo} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <label className="grid gap-1">
-                <span className="text-xs text-slate-400">Nombre</span>
-                <input className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" name="nombre" placeholder="Nombre" required />
-              </label>
-              <label className="grid gap-1">
+            <form onSubmit={crearSorteo} className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start auto-rows-max">
+              {/* Columna izquierda: Nombre + Precio por número apilados */}
+              <div className="md:col-span-1 space-y-4 self-start">
+                <label className="grid gap-0.5">
+                  <span className="text-xs text-slate-400">Nombre</span>
+                  <input
+                    className="border border-white/10 bg-black/30 rounded-md px-3 py-1.5 h-10 text-white text-sm leading-tight placeholder:text-slate-500"
+                    name="nombre"
+                    placeholder="Nombre"
+                    maxLength={80}
+                    required
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="text-xs text-slate-400">Precio por número</span>
+                  <input 
+                    className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" 
+                    name="precio_por_numero" 
+                    type="number" 
+                    step="0.01" 
+                    min="0.01"
+                    required 
+                  />
+                </label>
+              </div>
+              {/* Columna derecha: Descripción */}
+              <label className="grid gap-1 md:col-span-1">
                 <span className="text-xs text-slate-400">Descripción</span>
-                <input className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" name="descripcion" placeholder="Descripción" />
+                <textarea
+                  className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white min-h-[200px] resize-y"
+                  name="descripcion"
+                  placeholder="Descripción del sorteo (detalles, condiciones, etc.)"
+                  rows={8}
+                />
               </label>
+              {/* Siguiente fila */}
               <label className="grid gap-1">
                 <span className="text-xs text-slate-400">Cantidad de dígitos</span>
                 <input 
@@ -339,17 +366,6 @@ export default function AdminClient() {
                   min={1} 
                   max={10} 
                   step={1}
-                  required 
-                />
-              </label>
-              <label className="grid gap-1">
-                <span className="text-xs text-slate-400">Precio por número</span>
-                <input 
-                  className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" 
-                  name="precio_por_numero" 
-                  type="number" 
-                  step="0.01" 
-                  min="0.01"
                   required 
                 />
               </label>

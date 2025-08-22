@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "../styles/fire-effects.css";
 import Script from "next/script";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,6 +34,7 @@ export default function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <Script src="https://pay.payphonetodoesposible.com/payphone-client/PayPhone.js" strategy="afterInteractive" />
   {/* Logo flotante removido según solicitud */}
+        <ThemeToggle />
         {children}
         {/* Botón flotante de WhatsApp */}
         <a

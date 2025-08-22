@@ -80,6 +80,7 @@ export default function SorteoPage() {
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
   const [remaining, setRemaining] = useState<number>(0);
   const [payOpening, setPayOpening] = useState<boolean>(false);
+  const [payphoneOrdenId, setPayphoneOrdenId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string,string>>({});
   // Modal de éxito de orden
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -95,7 +96,9 @@ export default function SorteoPage() {
     if (!fields.cedula.trim()) e.cedula = 'Requerido';
     if (!fields.correo_electronico.trim()) e.correo_electronico = 'Ingresa tu correo';
     else if (!emailRegex.test(fields.correo_electronico.trim())) e.correo_electronico = 'Formato de correo inválido';
-    if (!fields.telefono.trim()) e.telefono = 'Requerido';
+    const tel = (fields.telefono || '').replace(/\D/g, '');
+    if (!tel) e.telefono = 'Requerido';
+    else if (tel.length !== 9) e.telefono = 'Debe tener 9 dígitos';
     if (!fields.direccion.trim()) e.direccion = 'Requerido';
     setErrors(e);
     return e;
@@ -317,7 +320,7 @@ export default function SorteoPage() {
         ) : (
           <>
             <h1 className="text-3xl font-bold tracking-tight">{sorteo?.nombre}</h1>
-            <p className="text-slate-300 mt-1">{sorteo?.descripcion}</p>
+            <p className="text-base sm:text-lg text-slate-200/90 mt-2 tracking-wide leading-relaxed">{sorteo?.descripcion}</p>
             {conteos && (
               <div className="mt-3 text-sm text-slate-700">Disponibles: {conteos.disponibles} / {conteos.total}</div>
             )}
@@ -401,7 +404,21 @@ export default function SorteoPage() {
                     </label>
                     <label className="grid gap-1">
                       <span className="text-xs text-slate-400">Teléfono</span>
-                      <input required className="border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white" value={cliente.telefono} onChange={(e) => setCliente({ ...cliente, telefono: e.target.value })} />
+                      <div className={`flex items-center gap-2 border rounded-md bg-black/30 ${errors.telefono ? 'border-rose-500/60 ring-1 ring-rose-500/30' : 'border-white/10'} focus-within:ring-2 focus-within:ring-rose-500/40`}>
+                        <span className="pl-3 pr-1 text-slate-300 select-none">+593</span>
+                        <input
+                          required
+                          inputMode="numeric"
+                          pattern="\\d{9}"
+                          maxLength={9}
+                          placeholder="9 dígitos"
+                          className="flex-1 bg-transparent outline-none text-white py-2 pr-3"
+                          value={cliente.telefono}
+                          onChange={(e) => setCliente({ ...cliente, telefono: e.target.value.replace(/[^0-9]/g, '').slice(0,9) })}
+                        />
+                      </div>
+                      <span className="text-[11px] text-slate-400">Ingresa solo los 9 dígitos. El código de país se agrega automáticamente.</span>
+                      {errors.telefono && <span className="text-[11px] text-rose-400">{errors.telefono}</span>}
                     </label>
                     <label className="grid gap-1">
                       <span className="text-xs text-slate-400">Código de verificación</span>
@@ -540,6 +557,9 @@ export default function SorteoPage() {
                         }
 
                         setMsg('Abriendo cajita de pagos...');
+                        if (d.orden_id) {
+                          setPayphoneOrdenId(String(d.orden_id));
+                        }
                         
                         // Cargar dinámicamente la Cajita de Pagos de Payphone
                         if (typeof window !== 'undefined') {
@@ -569,37 +589,60 @@ export default function SorteoPage() {
                           // Verificar que el SDK esté disponible
                           if ((window as any).PPaymentButtonBox) {
                             console.log('🔍 Configuración Payphone:', d.payphoneConfig);
-                            
-                            // Crear contenedor temporal para la cajita
-                            const containerId = 'payphone-button-container';
-                            let container = document.getElementById(containerId);
-                            if (!container) {
-                              container = document.createElement('div');
-                              container.id = containerId;
-                              container.style.position = 'fixed';
-                              container.style.top = '50%';
-                              container.style.left = '50%';
-                              container.style.transform = 'translate(-50%, -50%)';
-                              container.style.zIndex = '9999';
-                              container.style.background = 'white';
-                              container.style.padding = '20px';
-                              container.style.borderRadius = '10px';
-                              container.style.boxShadow = '0 10px 30px rgba(0,0,0,0.3)';
-                              document.body.appendChild(container);
+                            // Crear overlay con botón de cierre y contenedor interno
+                            let overlay = document.getElementById('pp-overlay');
+                            if (!overlay) {
+                              overlay = document.createElement('div');
+                              overlay.id = 'pp-overlay';
+                              Object.assign(overlay.style, {
+                                position: 'fixed', top: '0', left: '0', width: '100%', height: '100%',
+                                background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                zIndex: '9999', padding: '20px', boxSizing: 'border-box'
+                              } as CSSStyleDeclaration);
+                              document.body.appendChild(overlay);
+                            } else {
+                              overlay.innerHTML = '';
                             }
-                            
-                            // Crear la cajita de pagos
+
+                            const closeBtn = document.createElement('button');
+                            closeBtn.type = 'button';
+                            closeBtn.innerText = '✕';
+                            Object.assign(closeBtn.style, {
+                              position: 'absolute', top: '14px', right: '16px', background: 'rgba(0,0,0,0.55)', color: '#fff',
+                              border: '1px solid rgba(255,255,255,0.25)', borderRadius: '6px', cursor: 'pointer', fontSize: '16px',
+                              width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            } as CSSStyleDeclaration);
+                            closeBtn.onmouseenter = () => { closeBtn.style.background = 'rgba(255,0,90,0.6)'; };
+                            closeBtn.onmouseleave = () => { closeBtn.style.background = 'rgba(0,0,0,0.55)'; };
+                            closeBtn.onclick = async () => {
+                              try {
+                                const ov = document.getElementById('pp-overlay');
+                                if (ov) ov.remove();
+                                if (payphoneOrdenId) {
+                                  const resp = await fetch(`${API_BASE}/api/orders/${payphoneOrdenId}/cancel`, { method: 'POST' });
+                                  if (!resp.ok) throw new Error('No se pudo cancelar la orden');
+                                  setMsg('Pago cancelado por el usuario. Puedes intentarlo nuevamente.');
+                                  setMsgType('info');
+                                }
+                              } catch (err:any) {
+                                setMsg(err?.message || 'Error cancelando el pago');
+                                setMsgType('error');
+                              }
+                            };
+
+                            const inner = document.createElement('div');
+                            inner.id = 'pp-box';
+                            Object.assign(inner.style, {
+                              width: '100%', maxWidth: '640px', background: '#fff', borderRadius: '12px',
+                              boxShadow: '0 8px 28px -6px rgba(0,0,0,0.5)', overflow: 'hidden', position: 'relative'
+                            } as CSSStyleDeclaration);
+                            overlay.appendChild(inner);
+                            overlay.appendChild(closeBtn);
+
                             const ppb = new (window as any).PPaymentButtonBox(d.payphoneConfig);
-                            ppb.render(containerId);
-                            
+                            ppb.render('pp-box');
                             setMsg('✅ Cajita de pagos abierta. Completa tu pago en la ventana.');
                             setMsgType('success');
-                            
-                            // Limpiar contenedor después de un tiempo
-                            setTimeout(() => {
-                              const cont = document.getElementById(containerId);
-                              if (cont) cont.remove();
-                            }, 300000); // 5 minutos
                             
                           } else {
                             throw new Error('No se pudo cargar el SDK de Payphone.');

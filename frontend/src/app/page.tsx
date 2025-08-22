@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import FireParticles from "@/components/FireParticles";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001";
 
@@ -107,26 +108,30 @@ export default function HomePage() {
   const [ganadores, setGanadores] = useState<any[]>([]);
   const [sorteosImagenes, setSorteosImagenes] = useState<{[key: string]: any[]}>({});
   const [socialPosts, setSocialPosts] = useState<any[]>([]);
+  const [ganadoresPosts, setGanadoresPosts] = useState<any[]>([]);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
-  const [sRes, pRes, gRes, spRes] = await Promise.all([
+  const [sRes, pRes, gRes, spRes, gpRes] = await Promise.all([
           fetch(`${API_BASE}/api/sorteos`),
           fetch(`${API_BASE}/api/paquetes_publicados`),
           fetch(`${API_BASE}/api/sorteos_con_ganadores`),
-          fetch(`${API_BASE}/api/social_posts`)
+          fetch(`${API_BASE}/api/social_posts`),
+          fetch(`${API_BASE}/api/ganadores_posts`)
         ]);
         const sData = await sRes.json();
         const pData = await pRes.json();
         const gData = await gRes.json();
         const spData = await spRes.json();
+        const gpData = await gpRes.json();
         setSorteos(sData.sorteos || []);
         setPaquetes(pData.paquetes || []);
         setGanadores(gData.sorteos || []);
   console.log('DEBUG social_posts response', spData);
   setSocialPosts(spData.posts || []);
+        setGanadoresPosts(gpData.posts || []);
         
         // Cargar imágenes para cada sorteo
         const imagenesMap: {[key: string]: any[]} = {};
@@ -289,6 +294,9 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-[#0f1725] text-white">
+      {/* Partículas de fuego de fondo */}
+      <FireParticles intensity="low" particleCount={30} />
+      
       {/* Navbar fijo siempre arriba */}
       <nav className="fixed top-0 left-0 w-full z-50 bg-[#0f1725]/90 backdrop-blur supports-[backdrop-filter]:bg-[#0f1725]/60 border-b border-white/10">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between pl-20 sm:pl-24 md:pl-32">
@@ -300,13 +308,13 @@ export default function HomePage() {
         </div>
       </nav>
       {/* Hero */}
-      <section className="relative overflow-hidden pt-28 sm:pt-32">
-        <div className="absolute inset-0 bg-gradient-to-b from-[#0f1725] via-[#111827] to-[#0f1725]" />
-        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-14 sm:pt-16 pb-10 sm:pb-12 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 items-center">
+      <section className="relative overflow-hidden pt-20 sm:pt-24">
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0f1725] via-[#111827] to-[#0f1725] hero-bg" />
+        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 pb-6 sm:pb-8 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 items-center">
           <div className="reveal-up fade-stagger">
             <h1 className="text-4xl md:text-5xl font-extrabold leading-tight animate-title">
               ¡Compra tus <span className="glow-pulse">tickets</span> ahora!<br />
-              <span className="text-rose-500 glow-pulse">Promos por tiempo limitado</span>
+              <span className="glow-pulse" style={{ color: '#AA2F0B' }}>Promos por tiempo limitado</span>
             </h1>
             <p className="mt-4 text-slate-300 fade-in-up">Elige tu sorteo favorito, compra tickets o ahorra con paquetes especiales. ¡Las cantidades vuelan!</p>
             <div className="mt-6 flex gap-3 fade-in-up">
@@ -319,7 +327,7 @@ export default function HomePage() {
           <div className="reveal-up flex items-center justify-center">
             <div className="relative w-full h-full max-h-[480px] rounded-2xl overflow-hidden border border-white/10 shadow-xl group">
               <img
-                src="/principal.png"
+                src="/castromotorgif.gif"
                 alt="Promoción principal"
                 className="w-full h-full object-cover object-center transition-transform duration-[2500ms] group-hover:scale-105"
                 loading="eager"
@@ -376,13 +384,13 @@ export default function HomePage() {
                 <div className="mb-3">
                   <div className="text-xl font-semibold mb-2">{s.nombre}</div>
                   <div className="relative progress-container-animated">
-                    <div className="progress-bar-track">
+                    <div className="progress-bar-track" style={{height:'2.3rem'}}>
                       {(() => {
                         const pct = vendidosPct;
-                        let gradient = 'linear-gradient(90deg,#dc2626,#f87171,#fb923c)';
-                        if (pct >= 25) gradient = 'linear-gradient(90deg,#f59e0b,#fbbf24,#fb923c)';
-                        if (pct >= 55) gradient = 'linear-gradient(90deg,#10b981,#34d399,#10b981)';
-                        if (pct >= 90) gradient = 'linear-gradient(90deg,#6366f1,#8b5cf6,#ec4899)';
+                        let gradient = 'linear-gradient(90deg,#6b1d06,#AA2F0B,#fb923c)';
+                        if (pct >= 25) gradient = 'linear-gradient(90deg,#AA2F0B,#f59e0b,#fb923c)';
+                        if (pct >= 55) gradient = 'linear-gradient(90deg,#f59e0b,#fde047,#AA2F0B)';
+                        if (pct >= 90) gradient = 'linear-gradient(90deg,#0a84ff,#1d4ed8,#AA2F0B)';
                         return (
                           <div
                             className="progress-bar-fill progress-illusion transition-[width] duration-[1400ms] ease-out"
@@ -396,8 +404,8 @@ export default function HomePage() {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
                   {s.premios?.map((p: any) => (
-                    <div key={String(p.id)} className="rounded-lg bg-black/30 border border-white/10 p-3 hover:bg-black/40 transition">
-                      <div className={`text-sm font-bold ${p.vendido ? 'text-slate-400' : 'animate-gradient-text bg-gradient-to-r from-rose-400 via-amber-400 to-rose-400 bg-clip-text text-transparent'}`}>
+                    <div key={String(p.id)} className="rounded-lg bg-black/30 border border-white/10 p-3 hover:bg-black/40 transition premio-card">
+                      <div className={`text-sm font-bold ${p.vendido ? 'text-slate-600' : 'animate-gradient-text bg-gradient-to-r from-[#AA2F0B] via-amber-400 to-[#AA2F0B] bg-clip-text text-transparent'}`}>
                         PREMIO: {p.descripcion}
                       </div>
                       <div className={`text-lg font-bold ${p.vendido ? 'line-through text-slate-400' : 'text-white'}`}>#{p.numero_texto}</div>
@@ -416,21 +424,70 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Ganadores (lista aplanada) */}
+      {/* Ganadores - Publicaciones personalizadas o fallback a tarjetas automáticas */}
       <section id="ganadores" className="max-w-6xl mx-auto px-6 pb-24">
-  <h2 className="text-2xl font-bold mb-4 reveal-up section-title">Ganadores</h2>
-        {winners.length === 0 ? (
-          <div className="text-sm text-slate-400 reveal-up">Aún no hay ganadores registrados.</div>
+        <h2 className="text-2xl font-bold mb-4 reveal-up section-title">Ganadores</h2>
+        
+        {ganadoresPosts.length > 0 ? (
+          // Mostrar publicaciones personalizadas de ganadores
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {ganadoresPosts.map((post) => {
+              const FacebookPost = require('../components/social/FacebookPost').FacebookPost;
+              const InstagramPost = require('../components/social/InstagramPost').InstagramPost;
+              
+              return (
+                <div key={post.id} className="rounded-xl border border-white/10 bg-white/5 p-4 reveal-up">
+                  <div className="mb-3">
+                    <span className={`inline-block px-2 py-1 rounded text-xs uppercase tracking-wide ${
+                      post.platform === 'facebook' 
+                        ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' 
+                        : 'bg-pink-600/20 text-pink-300 border border-pink-500/30'
+                    }`}>
+                      {post.platform}
+                    </span>
+                  </div>
+                  
+                  {post.platform === 'facebook' ? (
+                    <FacebookPost url={post.url} />
+                  ) : (
+                    <InstagramPost url={post.url} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : winners.length > 0 ? (
+          // Fallback: mostrar tarjetas automáticas si no hay publicaciones personalizadas
+          <div>
+            <div className="text-sm text-slate-400 mb-4 reveal-up">
+              Mostrando ganadores automáticos. Para personalizar esta sección, 
+              <a href="/admin/social-posts" className="text-blue-400 hover:text-blue-300 ml-1">
+                configura publicaciones de ganadores desde el admin
+              </a>.
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {winners.map((w, idx) => (
+                <div key={idx} className="rounded-xl border border-white/10 bg-white/5 p-4 reveal-up">
+                  <div className="text-sm text-slate-400">{w.sorteo}</div>
+                  <div className="text-lg font-semibold text-white">{w.cliente}</div>
+                  <div className="text-xs text-emerald-400">{w.premio}</div>
+                  <div className="text-xs text-slate-400">Número: #{w.numero}</div>
+                </div>
+              ))}
+            </div>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {winners.map((w, idx) => (
-              <div key={idx} className="rounded-xl border border-white/10 bg-white/5 p-4 reveal-up">
-                <div className="text-sm text-slate-400">{w.sorteo}</div>
-                <div className="text-lg font-semibold text-white">{w.cliente}</div>
-                <div className="text-xs text-emerald-400">{w.premio}</div>
-                <div className="text-xs text-slate-400">Número: #{w.numero}</div>
-              </div>
-            ))}
+          // No hay ganadores ni publicaciones
+          <div className="text-center py-12">
+            <div className="text-sm text-slate-400 reveal-up mb-3">
+              Aún no hay ganadores para mostrar.
+            </div>
+            <div className="text-xs text-slate-500 reveal-up">
+              Los ganadores aparecerán aquí automáticamente o puedes 
+              <a href="/admin/social-posts" className="text-blue-400 hover:text-blue-300 ml-1">
+                configurar publicaciones personalizadas desde el admin
+              </a>.
+            </div>
           </div>
         )}
       </section>
@@ -440,7 +497,7 @@ export default function HomePage() {
         <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-black/40 via-black/30 to-black/40 p-6 md:p-8 shadow-lg relative overflow-hidden">
           <div className="absolute inset-0 pointer-events-none opacity-40 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.25),transparent_65%)]" />
           <h2 className="text-2xl font-bold mb-4 section-title">¿Cómo comprar?</h2>
-          <ol className="list-decimal list-inside space-y-2 text-sm text-slate-300">
+          <ol className="tutorial-list space-y-2 text-sm text-slate-300">
             <li>Elige el sorteo que deseas ver. Elige cuántos números (tickets) deseas (¡O selecciona un paquete promocional que ya trae varios números con descuento!).</li>
             <li>Haz clic en el botón de compra para ir al formulario del sorteo.</li>
             <li>Completa tus datos personales y escribe tu correo correctamente y número de teléfono CORRECTAMENTE (Te contactaremos por esos medios).</li>

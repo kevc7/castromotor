@@ -1,8 +1,80 @@
+/* Brand glassy panel for '¿Cómo participar?' */
+.glassy-como {
+  background: linear-gradient(135deg,rgba(255,255,255,0.95) 70%,rgba(170,47,11,0.1) 100%);
+  box-shadow: 0 6px 32px 0 rgba(170,47,11,0.1), 0 1.5px 6px 0 rgba(0,0,0,0.06);
+  border-radius: 1.25rem;
+  border-width: 2.5px;
+  backdrop-filter: blur(10px);
+}
+.border-brand-gradient {
+  border-image: linear-gradient(90deg,#AA2F0B,#fb923c,#0a84ff) 1;
+}
+.section-title-brand {
+  display:inline-block;
+  background: linear-gradient(90deg,#AA2F0B,#fb923c,#0a84ff);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  font-weight: 900;
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+  position:relative;
+}
+.section-title-brand:after {
+  content:"";
+  display:block;
+  height:4px;
+  width:100%;
+  border-radius:2px;
+  margin-top:2px;
+  background: linear-gradient(90deg,#AA2F0B,#fb923c,#0a84ff);
+  box-shadow:0 0 8px #AA2F0B44;
+}
+.como-list > li {
+  position:relative;
+  padding-left:1.2em;
+  margin-bottom:0.5em;
+  color: #2d3748;
+  font-weight: 500;
+}
+.como-list > li:before {
+  content:counter(list-item) ".";
+  position:absolute;
+  left:0;
+  top:0;
+  color:#AA2F0B;
+  font-weight:900;
+  font-size:1.1em;
+  text-shadow:0 1px 4px #fb923c33;
+}
+[data-theme="dark"] .glassy-como {
+  background: linear-gradient(135deg,rgba(15,23,37,0.95) 80%,rgba(170,47,11,0.15) 100%);
+  border-color: #fb923c66;
+  box-shadow: 0 6px 32px 0 rgba(170,47,11,0.12), 0 1.5px 6px 0 rgba(0,0,0,0.2);
+  backdrop-filter: blur(12px);
+}
+[data-theme="dark"] .section-title-brand {
+  color: #fb923c; /* Fallback color */
+  background: linear-gradient(90deg,#fb923c,#AA2F0B,#0a84ff);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+[data-theme="dark"] .section-title-brand:after {
+  background: linear-gradient(90deg,#fb923c,#AA2F0B,#0a84ff);
+}
+[data-theme="dark"] .como-list > li {
+  color: #e2e8f0;
+}
 @import "tailwindcss";
 
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Brand palette (from principal.png approximation) */
+  --brand-primary: #AA2F0B;   /* warm orange/red */
+  --brand-secondary: #0a84ff; /* blue accent used in video button */
+  --brand-dark: #0f1725;      /* page background */
 }
 
 @theme inline {
@@ -23,6 +95,72 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Theme tokens for client area */
+.client-surface {
+  --surface-bg: #0f1725; /* dark default */
+  --surface-fg: #ffffff;
+  --surface-muted: #94a3b8;
+  --surface-border: rgba(255,255,255,0.1);
+  --panel-bg: rgba(255,255,255,0.05);
+  --panel-elevated: rgba(255,255,255,0.08);
+}
+[data-theme="light"] .client-surface {
+  /* A light slate/blue tinted base to avoid pure white dominance */
+  --surface-bg: #eef2f7;
+  --surface-fg: #0b1320;
+  --surface-muted: #3b4b63;
+  --surface-border: rgba(11,19,32,0.12);
+  --panel-bg: rgba(255,255,255,0.85);
+  --panel-elevated: rgba(255,255,255,0.93);
+}
+
+/* Apply tokens to main wrappers where possible without changing business logic */
+.client-surface main { background-color: var(--surface-bg) !important; color: var(--surface-fg) !important; }
+.client-surface { background-color: var(--surface-bg); }
+.client-surface nav { background-color: color-mix(in srgb, var(--surface-bg) 95%, transparent) !important; border-color: var(--surface-border) !important; }
+.client-surface nav a { color: color-mix(in srgb, var(--surface-fg) 80%, var(--surface-muted) 20%) !important; }
+.client-surface nav a:hover { color: var(--surface-fg) !important; }
+.client-surface .text-slate-300 { color: var(--surface-muted) !important; }
+.client-surface .text-slate-400 { color: color-mix(in srgb, var(--surface-muted) 80%, #ffffff 20%) !important; }
+.client-surface .border-white\/10 { border-color: var(--surface-border) !important; }
+.client-surface p, .client-surface .prose, .client-surface .text-base, .client-surface .text-lg { color: color-mix(in srgb, var(--surface-fg) 92%, var(--surface-muted) 8%) }
+[data-theme="light"] .client-surface input, [data-theme="light"] .client-surface textarea, [data-theme="light"] .client-surface select {
+  background:#ffffff; color:#0f1725; border-color: rgba(15,23,42,0.15);
+}
+[data-theme="light"] .client-surface ::placeholder { color: color-mix(in srgb, #0f1725 45%, #94a3b8 55%); }
+
+/* Theme toggle appearance */
+.theme-toggle { background: linear-gradient(90deg,#1f2937,#111827); color:#fff; border:1px solid rgba(255,255,255,0.12); }
+[data-theme="light"] .theme-toggle { background: linear-gradient(90deg,#ffffff,#f3f4f6); color:#111827; border:1px solid rgba(0,0,0,0.08); }
+
+/* Hero gradient adapts in light mode */
+[data-theme="light"] .hero-bg { background: linear-gradient(180deg,#eef2f7,#e6edf5,#eef2f7) !important; }
+
+/* Card surfaces (premios/paquetes) in light mode */
+[data-theme="light"] .client-surface .card-prom { background: linear-gradient(180deg,var(--panel-bg), var(--panel-elevated)) !important; border-color: var(--surface-border) !important; }
+[data-theme="light"] .client-surface .card-prom:hover { background: linear-gradient(180deg,var(--panel-elevated), #ffffff) !important; box-shadow: 0 12px 28px rgba(2,6,23,0.08) !important; }
+[data-theme="light"] .client-surface .badge-save { background: rgba(16,185,129,0.1); color:#0f766e; border-color: rgba(15,118,110,0.2); }
+[data-theme="light"] .client-surface .btn-cta { background-image: linear-gradient(90deg,#AA2F0B,#fb923c,#AA2F0B); }
+
+/* Prize cards (premios section) text colors in light mode */
+[data-theme="light"] .client-surface .text-emerald-400 { color: #0f766e !important; }
+[data-theme="light"] .client-surface .text-slate-500, [data-theme="light"] .client-surface .text-slate-400 { color:#334155 !important; }
+[data-theme="light"] .client-surface .premio-card { background-color:#ffffff !important; border-color: rgba(15,23,42,0.12) !important; }
+[data-theme="light"] .client-surface .premio-card .text-white { color:#0f1725 !important; }
+
+/* General card background used widely (override Tailwind bg-white/5 for light mode) */
+[data-theme="light"] .client-surface .bg-white\/5 { background: linear-gradient(180deg,var(--panel-bg), var(--panel-elevated)) !important; }
+
+/* Progress bar track and badge in light mode */
+[data-theme="light"] .client-surface .progress-bar-track {
+  background: linear-gradient(135deg, rgba(2,6,23,0.06), rgba(2,6,23,0.12));
+  border-color: var(--surface-border);
+}
+[data-theme="light"] .client-surface .progress-badge {
+  color: #0b1320;
+  text-shadow: none;
 }
 
 /* ===================== */
@@ -175,7 +313,7 @@ button:disabled, [aria-disabled="true"], .disabled {
 .progress-bar-track {
   position: relative;
   width: 100%;
-  height: 1.1rem; /* ~5-10% bigger */
+  height: 2.2rem; /* doubled height */
   border-radius: 9999px;
   background: linear-gradient(135deg, rgba(30,41,59,0.85), rgba(15,23,42,0.85));
   overflow: hidden;
@@ -186,7 +324,8 @@ button:disabled, [aria-disabled="true"], .disabled {
   position: absolute;
   inset: 0 auto 0 0;
   height: 100%;
-  background: linear-gradient(90deg,#fb7185,#f43f5e,#fb923c,#fb7185); /* default, overridden inline */
+  /* Default gradient aligned to brand palette; JS may override inline per thresholds */
+  background: linear-gradient(90deg, var(--brand-primary), #f59e0b, #fb923c, var(--brand-primary));
   background-size: 200% 100%;
   animation: progress-shimmer 3.5s linear infinite;
   box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 2px 6px -1px rgba(244,63,94,0.55), 0 4px 14px -2px rgba(251,113,133,0.45);
@@ -211,13 +350,13 @@ button:disabled, [aria-disabled="true"], .disabled {
 @keyframes progress-width-pulse { 0%,100% { transform: scaleX(1); } 50% { transform: scaleX(1.015); } }
 
 /* Color threshold utility classes (fallback if JS inline not applied) */
-.progress-low { background: linear-gradient(90deg,#dc2626,#f87171,#fb923c); }
-.progress-mid { background: linear-gradient(90deg,#f59e0b,#fbbf24,#fb923c); }
-.progress-high { background: linear-gradient(90deg,#10b981,#34d399,#10b981); }
-.progress-max { background: linear-gradient(90deg,#6366f1,#8b5cf6,#ec4899); }
+.progress-low { background: linear-gradient(90deg,#b91c1c,#ef4444,#fb923c); }
+.progress-mid { background: linear-gradient(90deg,#AA2F0B,#f59e0b,#fb923c); }
+.progress-high { background: linear-gradient(90deg,#16a34a,#22c55e,#16a34a); }
+.progress-max { background: linear-gradient(90deg,#0ea5e9,#2563eb,#AA2F0B); }
 .progress-badge {
   position: absolute; left:50%; top:50%; transform: translate(-50%,-50%);
-  font-size: 0.70rem; letter-spacing:.5px; font-weight:600; text-transform:uppercase;
+  font-size: 0.9rem; letter-spacing:.5px; font-weight:700; text-transform:uppercase;
   color:#fff; text-shadow:0 2px 4px rgba(0,0,0,0.55);
   pointer-events:none; white-space:nowrap;
 }

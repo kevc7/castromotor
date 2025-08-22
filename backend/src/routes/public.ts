@@ -704,7 +704,7 @@ async function enviarCorreoAprobacion(ordenId: bigint) {
             codigo: aprobada.codigo,
             sorteoNombre: aprobada.sorteo?.nombre,
             premios: premiosData,
-            linkSorteo: process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/sorteos/${aprobada.sorteo?.id}` : undefined,
+            linkSorteo: process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/sorteos/${aprobada.sorteo?.id}/info` : undefined,
             logoUrl: process.env.BRAND_LOGO_URL || null,
             year: new Date().getFullYear()
           });
@@ -714,6 +714,27 @@ async function enviarCorreoAprobacion(ordenId: bigint) {
             subject: `🎉 ¡Has ganado ${premiosGanados.length > 1 ? 'premios' : 'un premio'} en ${aprobada.sorteo?.nombre || 'un sorteo'}!`,
             html: htmlGanador
           });
+
+          // Notificar a administradores (igual que flujo de transferencia)
+          try {
+            const adminMails = await (prisma as any).usuarios.findMany({ where: { rol: { in: ['admin','superadmin','root'] } } });
+            const toAdmins = adminMails.map((u: any) => u.correo_electronico).filter(Boolean).join(',');
+            if (toAdmins) {
+              const rowsHtml = premiosGanados
+                .map(p => `<li><strong>${p.descripcion}</strong> — Número: #${p.numero_sorteo?.numero_texto ?? ''} (Sorteo: ${p.sorteo?.nombre ?? ''})</li>`) 
+                .join('');
+              const htmlAdmin = `<p>Se ha aprobado la orden <strong>${aprobada.codigo}</strong> y contiene número(s) ganador(es).</p>
+                <p>Cliente: ${aprobada.cliente.nombres} (${aprobada.cliente.correo_electronico})</p>
+                <ul>${rowsHtml}</ul>`;
+              await sendMail({
+                to: toAdmins,
+                subject: `🔔 Cliente ganador en ${aprobada.sorteo?.nombre || 'sorteo'}`,
+                html: htmlAdmin
+              });
+            }
+          } catch (admErr) {
+            console.error('No se pudo notificar administradores de premio ganado (Payphone):', admErr);
+          }
         }
       }
     }
@@ -1437,10 +1458,24 @@ publicRouter.get('/paquetes_publicados', async (_req: Request, res: Response, ne
   }
 });
 
-// Social posts públicos activos
+// Social posts públicos activos (solo tipo 'social')
 publicRouter.get('/social_posts', async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const posts = await (prisma as any).social_posts.findMany({ where: { activo: true }, orderBy: [{ orden: 'asc' }, { id: 'asc' }] });
+    const posts = await (prisma as any).social_posts.findMany({ 
+      where: { activo: true, tipo: 'social' }, 
+      orderBy: [{ orden: 'asc' }, { id: 'asc' }] 
+    });
+    res.json({ posts });
+  } catch (e) { next(e); }
+});
+
+// Publicaciones de ganadores activas
+publicRouter.get('/ganadores_posts', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const posts = await (prisma as any).social_posts.findMany({ 
+      where: { activo: true, tipo: 'ganador' }, 
+      orderBy: [{ orden: 'asc' }, { id: 'asc' }] 
+    });
     res.json({ posts });
   } catch (e) { next(e); }
 });

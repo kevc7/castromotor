@@ -158,14 +158,20 @@ adminRouter.get('/stats', requireAuth, async (_req, res, next) => {
 const socialPostSchema = z.object({
   platform: z.enum(['facebook', 'instagram']),
   url: z.string().url(),
+  tipo: z.enum(['social', 'ganador']).optional().default('social'),
   orden: z.number().int().optional(),
   activo: z.boolean().optional()
 });
 
-// Listar todos
-adminRouter.get('/social-posts', requireAuth, async (_req, res, next) => {
+// Listar todos (con filtro opcional por tipo)
+adminRouter.get('/social-posts', requireAuth, async (req, res, next) => {
   try {
-    const posts = await (prisma as any).social_posts.findMany({ orderBy: [{ orden: 'asc' }, { id: 'asc' }] });
+    const { tipo } = req.query;
+    const where = tipo ? { tipo: String(tipo) } : {};
+    const posts = await (prisma as any).social_posts.findMany({ 
+      where, 
+      orderBy: [{ orden: 'asc' }, { id: 'asc' }] 
+    });
     res.json({ posts });
   } catch (e) { next(e); }
 });
@@ -174,9 +180,21 @@ adminRouter.get('/social-posts', requireAuth, async (_req, res, next) => {
 adminRouter.post('/social-posts', requireAuth, async (req, res, next) => {
   try {
     const body = socialPostSchema.parse(req.body);
-    const maxOrden = await (prisma as any).social_posts.aggregate({ _max: { orden: true } });
+    // Calcular orden máximo dentro del mismo tipo
+    const maxOrden = await (prisma as any).social_posts.aggregate({ 
+      _max: { orden: true },
+      where: { tipo: body.tipo ?? 'social' }
+    });
     const orden = body.orden ?? (Number(maxOrden?._max?.orden ?? 0) + 1);
-    const created = await (prisma as any).social_posts.create({ data: { platform: body.platform, url: body.url, orden, activo: body.activo ?? true } });
+    const created = await (prisma as any).social_posts.create({ 
+      data: { 
+        platform: body.platform, 
+        url: body.url, 
+        tipo: body.tipo ?? 'social',
+        orden, 
+        activo: body.activo ?? true 
+      } 
+    });
     res.json({ post: created });
   } catch (e) { next(e); }
 });
@@ -206,6 +224,73 @@ adminRouter.delete('/social-posts/:id', requireAuth, async (req, res, next) => {
     const params = z.object({ id: z.string() }).parse(req.params);
     await (prisma as any).social_posts.delete({ where: { id: BigInt(params.id) } });
     res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+// =========================
+//  Ganadores (premios instantáneos)
+// =========================
+
+// Listado agregado por cliente y sorteo con números/premios
+adminRouter.get('/ganadores', requireAuth, async (req, res, next) => {
+  try {
+    const q = ((req.query.q as string) || '').trim();
+    const limit = Math.min(500, Math.max(1, Number((req.query.limit as string) || 200)));
+    const offset = Math.max(0, Number((req.query.offset as string) || 0));
+
+    const rows: any[] = await (prisma as any).$queryRaw`
+      SELECT 
+        c.id               AS cliente_id,
+        COALESCE(c.nombres,'')  AS nombres,
+        COALESCE(c.apellidos,'') AS apellidos,
+        c.correo_electronico    AS correo,
+        c.telefono              AS telefono,
+        s.id               AS sorteo_id,
+        s.nombre           AS sorteo_nombre,
+  ARRAY_AGG(DISTINCT ns.numero_texto ORDER BY ns.numero_texto)  AS numeros,
+  ARRAY_AGG(DISTINCT p.descripcion ORDER BY p.descripcion)      AS premios,
+        JSON_AGG(DISTINCT JSONB_BUILD_OBJECT('numero', ns.numero_texto, 'premio', p.descripcion)) AS aciertos,
+        COUNT(DISTINCT p.id) AS premios_count,
+        MAX(p.id) AS any_premio_id
+      FROM ordenes o
+      JOIN clientes c ON c.id = o.cliente_id
+      JOIN ordenes_items oi ON oi.orden_id = o.id
+      JOIN numeros_sorteo ns ON ns.id = oi.numero_sorteo_id
+      JOIN premios p ON p.numero_sorteo_id = ns.id
+      JOIN sorteos s ON s.id = p.sorteo_id
+      WHERE o.estado_pago = 'aprobado'
+      ${q ? Prisma.sql`AND (
+        c.nombres ILIKE ${'%' + q + '%'} OR c.apellidos ILIKE ${'%' + q + '%'} OR c.correo_electronico ILIKE ${'%' + q + '%'} OR 
+        s.nombre ILIKE ${'%' + q + '%'} OR ns.numero_texto ILIKE ${'%' + q + '%'} OR p.descripcion ILIKE ${'%' + q + '%'}
+      )` : Prisma.empty}
+      GROUP BY c.id, c.nombres, c.apellidos, c.correo_electronico, c.telefono, s.id, s.nombre
+      ORDER BY any_premio_id DESC
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+
+    res.json({ ganadores: rows.map(r => ({
+      cliente_id: String(r.cliente_id),
+      nombres: r.nombres,
+      apellidos: r.apellidos,
+      correo: r.correo,
+      telefono: r.telefono,
+      sorteo_id: String(r.sorteo_id),
+      sorteo_nombre: r.sorteo_nombre,
+      numeros: (r.numeros || []).map((n: any) => String(n)),
+      premios: (r.premios || []).map((p: any) => String(p)),
+      aciertos: Array.isArray(r.aciertos) ? r.aciertos.map((a: any) => ({ numero: String(a.numero), premio: String(a.premio) })) : [],
+      premios_count: Number(r.premios_count || 0)
+    })) });
+  } catch (e) { next(e); }
+});
+
+// Enviar correo a un ganador
+adminRouter.post('/ganadores/enviar_correo', requireAuth, async (req, res, next) => {
+  try {
+    const body = z.object({ to: z.string().email(), subject: z.string().min(1), message: z.string().min(1) }).parse(req.body);
+    const { sendMail } = await import('../utils/mailer');
+    const info = await sendMail({ to: body.to, subject: body.subject, html: `<p>${body.message.replace(/\n/g,'<br/>')}</p>` });
+    res.json({ ok: true, id: info?.messageId || null });
   } catch (e) { next(e); }
 });
 // Seed métodos de pago básicos (idempotente)
@@ -709,7 +794,7 @@ adminRouter.post("/orders/:id/approve", requireAuth, async (req, res, next) => {
                 codigo: aprobada.codigo,
                 sorteoNombre: aprobada.sorteo?.nombre,
                 premios: premiosData,
-                linkSorteo: process.env.PUBLIC_BASE_URL ? `${process.env.PUBLIC_BASE_URL}/sorteos/${aprobada.sorteo?.id}` : undefined,
+                linkSorteo: process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/sorteos/${aprobada.sorteo?.id}/info` : undefined,
                 logoUrl: process.env.BRAND_LOGO_URL || null,
                 year: new Date().getFullYear()
               });

@@ -1,54 +1,77 @@
 "use client";
-import React, { useEffect, useState } from 'react';
 
-function applyTheme(t: string) {
-  if (typeof document === 'undefined') return;
-  document.documentElement.setAttribute('data-theme', t);
-  // Persist
-  try { localStorage.setItem('theme', t); } catch {}
+import React, { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+
+function applyTheme(theme: "light" | "dark") {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.theme = theme;
 }
 
-export const ThemeToggle: React.FC = () => {
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+export default function ThemeToggle() {
+  const pathname = usePathname();
+  const isAdmin = pathname?.startsWith("/admin") ?? false;
+  const [theme, setTheme] = useState<"light" | "dark">("dark");
+  const [mounted, setMounted] = useState(false);
+
+  // Scope marker to limit CSS overrides to client area only
   useEffect(() => {
-    // Initialize from storage or prefers-color-scheme
-    try {
-      const stored = localStorage.getItem('theme') as 'dark' | 'light' | null;
-      if (stored === 'light' || stored === 'dark') {
-        setTheme(stored);
-        applyTheme(stored);
-        return;
-      }
-      const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
-      const initial = prefersLight ? 'light' : 'dark';
-      setTheme(initial);
-      applyTheme(initial);
-    } catch {
-      applyTheme('dark');
+    if (typeof document === "undefined") return;
+    const body = document.body;
+    if (isAdmin) {
+      body.classList.remove("client-surface");
+    } else {
+      body.classList.add("client-surface");
     }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    setMounted(true);
+    try {
+      const fromStorage = (localStorage.getItem("theme") as "light" | "dark") || "dark";
+      setTheme(fromStorage);
+      applyTheme(fromStorage);
+    } catch {}
   }, []);
 
-  const toggle = () => {
-    setTheme(prev => {
-      const next = prev === 'dark' ? 'light' : 'dark';
-      applyTheme(next);
-      return next;
-    });
-  };
+  function toggle() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    try { localStorage.setItem("theme", next); } catch {}
+    applyTheme(next);
+  }
+
+  // Hide on admin for now
+  if (isAdmin) return null;
+
+  // Evitar hydration mismatch - no renderizar hasta que esté montado en el cliente
+  if (!mounted) {
+    return (
+      <div className="fixed right-4 top-4 z-[60] inline-flex items-center gap-2 px-3 py-2 rounded-full shadow-md theme-toggle opacity-0">
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/30">
+          <div className="h-3.5 w-3.5" />
+        </span>
+        <span className="text-sm font-medium">Tema</span>
+      </div>
+    );
+  }
 
   return (
-    <div className="theme-toggle-btn">
-      <button aria-label="Cambiar tema" onClick={toggle} className="theme-toggle group">
-        <span className="theme-toggle__thumb" />
-        {/* Icons */}
-        <svg className="theme-toggle__icon sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2m-3.07-7.07-1.42 1.42M6.35 17.65l-1.42 1.42" />
-        </svg>
-        <svg className="theme-toggle__icon moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 12.79A9 9 0 0 1 11.21 3 7 7 0 0 0 12 17a7 7 0 0 0 9-4.21Z" />
-        </svg>
-      </button>
-    </div>
+    <button
+      onClick={toggle}
+      aria-label={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+      className="fixed right-4 top-4 z-[60] inline-flex items-center gap-2 px-3 py-2 rounded-full shadow-md theme-toggle transition-opacity duration-300 opacity-100"
+    >
+      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/30">
+        {theme === "dark" ? (
+          // Sun icon
+          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zm10.48 14.32l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM12 4V1h-1v3h1zm0 19v-3h-1v3h1zM4 12H1v-1h3v1zm19 0v-1h-3v1h3zM6.76 19.16l-1.42 1.41-1.79-1.8 1.41-1.41 1.8 1.8zm12.02-12.02l1.41-1.41 1.8 1.79-1.41 1.41-1.8-1.79zM12 7a5 5 0 100 10 5 5 0 000-10z"/></svg>
+        ) : (
+          // Moon icon
+          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M21.64 13A9 9 0 1111 2.36 7 7 0 0021.64 13z"/></svg>
+        )}
+      </span>
+      <span className="text-sm font-medium">{theme === "dark" ? "Claro" : "Oscuro"}</span>
+    </button>
   );
-};
+}

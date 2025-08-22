@@ -105,7 +105,9 @@ export default function CheckoutPage() {
     if (!cliente.cedula.trim()) e.cedula = 'Requerido';
     if (!cliente.correo_electronico.trim()) e.correo_electronico = 'Correo requerido';
     else if (!emailRegex.test(cliente.correo_electronico.trim())) e.correo_electronico = 'Correo inválido';
-    if (!cliente.telefono.trim()) e.telefono = 'Requerido';
+  const tel = cliente.telefono.replace(/\D/g, '');
+  if (!tel) e.telefono = 'Requerido';
+  else if (tel.length !== 9) e.telefono = 'Debe tener 9 dígitos';
     if (!cliente.direccion.trim()) e.direccion = 'Requerido';
     setErrors(e); return e;
   }, [cliente]);
@@ -324,14 +326,73 @@ export default function CheckoutPage() {
   // UI helpers
   function StepIndicator() {
     const steps = [1,2,3] as Step[];
+    const stepTitles = ['Datos', 'Pago', 'Confirmación'];
+    
     return (
-      <div className="flex items-center gap-3 mb-6">
-        {steps.map(s => (
-          <div key={s} className="flex items-center gap-2">
-            <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-semibold ${step === s ? 'bg-rose-600 text-white' : s < step ? 'bg-emerald-600 text-white' : 'bg-white/10 text-white/60'}`}>{s}</div>
-            {s < steps.length && <div className="w-10 h-px bg-white/20" />}
-          </div>
-        ))}
+      <div className="mb-8">
+        {/* Progress line background */}
+        <div className="relative flex items-center justify-between max-w-md mx-auto mb-4">
+          {/* Background line */}
+          <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-white/20 transform -translate-y-1/2"></div>
+          
+          {/* Progress line (only shows progress between completed steps) */}
+          <div 
+            className="absolute top-1/2 left-0 h-0.5 bg-gradient-to-r from-[#AA2F0B] to-[#fb923c] transform -translate-y-1/2 transition-all duration-500 ease-out"
+            style={{ 
+              width: step === 1 ? '0%' : step === 2 ? '50%' : '100%' 
+            }}
+          ></div>
+          
+          {/* Step circles */}
+          {steps.map(s => (
+            <div key={s} className="relative z-10">
+              <div
+                className={`
+                  w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold transition-all duration-300 shadow-lg
+                  ${step === s
+                    ? 'bg-gradient-to-br from-[#AA2F0B] to-[#fb923c] text-white ring-4 ring-[#AA2F0B]/20 scale-110 shadow-xl'
+                    : s < step
+                      ? 'bg-gradient-to-br from-[#10b981] to-[#059669] text-white shadow-lg'
+                      : 'bg-white/10 text-white/50 border-2 border-white/20'
+                  }
+                `}
+              >
+                {s < step ? (
+                  // Checkmark for completed steps
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  s
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        
+        {/* Step labels */}
+        <div className="flex items-center justify-between max-w-md mx-auto">
+          {stepTitles.map((title, index) => {
+            const s = index + 1;
+            return (
+              <div key={s} className="text-center">
+                <span
+                  className={`
+                    text-sm font-medium transition-colors duration-300
+                    ${step === s
+                      ? 'text-[#fb923c] font-semibold'
+                      : s < step
+                        ? 'text-[#10b981] font-semibold'
+                        : 'text-white/60'
+                    }
+                  `}
+                >
+                  {title}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     );
   }
@@ -398,13 +459,42 @@ export default function CheckoutPage() {
             <div className="md:col-span-2 p-5 rounded-xl border border-white/10 bg-white/5">
               <h2 className="text-lg font-semibold mb-4">Tus datos (Paso 1)</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {(['nombres','apellidos','cedula','telefono','direccion'] as (keyof ClienteForm)[]).map(field => (
+                {(['nombres','apellidos','cedula'] as (keyof ClienteForm)[]).map(field => (
                   <label key={field} className="grid gap-1">
                     <span className="text-xs text-slate-400 capitalize">{field}</span>
                     <input className={`border rounded-md px-3 py-2 bg-black/30 text-white border-white/10 focus:outline-none focus:ring-2 focus:ring-rose-500/40 ${errors[field] ? 'ring-rose-500/40 border-rose-500/50' : ''}`} value={cliente[field]} onChange={e => setCliente(c => ({ ...c, [field]: e.target.value }))} />
                     {errors[field] && <span className="text-[11px] text-rose-400">{errors[field]}</span>}
                   </label>
                 ))}
+
+                {/* Teléfono con prefijo +593 y restricción a 9 dígitos */}
+                <label className="grid gap-1">
+                  <span className="text-xs text-slate-400">Telefono</span>
+                  <div className={`flex items-center gap-2 border rounded-md bg-black/30 border-white/10 focus-within:ring-2 focus-within:ring-rose-500/40 ${errors.telefono ? 'ring-rose-500/40 border-rose-500/50' : ''}`}>
+                    <span className="pl-3 pr-1 text-slate-300 select-none">+593</span>
+                    <input
+                      inputMode="numeric"
+                      pattern="\\d{9}"
+                      maxLength={9}
+                      placeholder="9 dígitos"
+                      className="flex-1 bg-transparent outline-none text-white py-2 pr-3"
+                      value={cliente.telefono}
+                      onChange={e => {
+                        const onlyDigits = e.target.value.replace(/[^0-9]/g, '').slice(0,9);
+                        setCliente(c => ({ ...c, telefono: onlyDigits }));
+                      }}
+                    />
+                  </div>
+                  <span className="text-[11px] text-slate-400">Ingresa solo los 9 dígitos. El código de país se agrega automáticamente.</span>
+                  {errors.telefono && <span className="text-[11px] text-rose-400">{errors.telefono}</span>}
+                </label>
+
+                {/* Dirección */}
+                <label className="grid gap-1">
+                  <span className="text-xs text-slate-400 capitalize">direccion</span>
+                  <input className={`border rounded-md px-3 py-2 bg-black/30 text-white border-white/10 focus:outline-none focus:ring-2 focus:ring-rose-500/40 ${errors.direccion ? 'ring-rose-500/40 border-rose-500/50' : ''}`} value={cliente.direccion} onChange={e => setCliente(c => ({ ...c, direccion: e.target.value }))} />
+                  {errors.direccion && <span className="text-[11px] text-rose-400">{errors.direccion}</span>}
+                </label>
                 <label className="grid gap-1 md:col-span-2">
                   <span className="text-xs text-slate-400">Correo</span>
                   <div className="flex gap-2 flex-col sm:flex-row">
@@ -484,9 +574,10 @@ export default function CheckoutPage() {
                     </label>
                     <p className="mt-2 text-[11px] text-slate-400">El equipo revisará tu comprobante y aprobará tus números.</p>
                   </div>
-                  <div className="flex justify-between mt-4">
+                  <div className="flex justify-between mt-4 gap-2 flex-wrap">
                     <button onClick={() => setStep(1)} className="px-5 py-2 rounded-md bg-white/10 hover:bg-white/15 text-white text-sm">Atrás</button>
                     <button disabled={!selectedBancoId || !comprobanteFile || !isVerified} onClick={crearOrdenTransferencia} className={`px-6 py-2 rounded-md font-semibold text-sm ${selectedBancoId && comprobanteFile && isVerified ? 'bg-rose-600 hover:bg-rose-700 text-white' : 'bg-white/10 text-white/40 cursor-not-allowed'} transition`}>Enviar orden</button>
+                    <button type="button" onClick={() => router.push(`/sorteos/${sorteoId}/info`)} className="px-5 py-2 rounded-md bg-white/10 hover:bg-white/15 text-white text-sm">Volver al sorteo</button>
                   </div>
                 </div>
               )}
@@ -500,6 +591,7 @@ export default function CheckoutPage() {
                     {payphoneOrdenId && (
                       <button type="button" onClick={cancelarPayphone} className="px-5 py-2 rounded-md bg-rose-700/30 hover:bg-rose-700/50 text-rose-200 text-sm">Cancelar pago</button>
                     )}
+                    <button type="button" onClick={() => router.push(`/sorteos/${sorteoId}/info`)} className="px-5 py-2 rounded-md bg-white/10 hover:bg-white/15 text-white text-sm">Volver al sorteo</button>
                   </div>
                   {payphoneMsg && <div className="text-xs text-emerald-300">{payphoneMsg}</div>}
                   <p className="text-[10px] text-slate-500">Si tu pago es aprobado serás redirigido automáticamente y recibirás un correo de confirmación.</p>
