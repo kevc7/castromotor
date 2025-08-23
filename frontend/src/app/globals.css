@@ -686,7 +686,8 @@ button:disabled, [aria-disabled="true"], .disabled {
 [data-theme="light"] .fade-stagger.is-visible > * { transition-duration: .5s; }
 
 /* Wave text animation (per-letter) */
-.wave-text { white-space: normal; }
+.wave-text { white-space: normal; line-height: 1.15; }
+.wave-text .wave-word { display:inline-block; white-space: nowrap; margin-right:.065em; }
 .wave-text .wave-letter { display:inline-block; animation: wave-y 1.8s ease-in-out infinite; will-change: transform; }
 @keyframes wave-y { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-0.35em); } }
 @media (prefers-reduced-motion: reduce) { .wave-text .wave-letter { animation: none !important; } }

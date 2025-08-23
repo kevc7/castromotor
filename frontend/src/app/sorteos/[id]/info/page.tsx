@@ -28,7 +28,7 @@ function Carousel({ images }: { images: any[] }) {
         <img
           src={getImageUrl(current.url)}
           alt={current.alt || "Sorteo"}
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-contain sm:object-cover bg-black/50"
           loading="eager"
           onError={(e) => console.error('Error loading image:', current.url, e)}
           onLoad={() => console.log('Image loaded successfully:', current.url)}
@@ -118,8 +118,30 @@ export default function SorteoInfoPage() {
     }
   }, [vendidosPct]);
 
+  // Calcular mínimo permitido: (menor paquete + 1) o 1 si no hay paquetes
+  const minAllowed = useMemo(() => {
+    try {
+      const cantidades = (data?.paquetes || []).map((p: any) => Number(p.cantidad_numeros || 0)).filter((n: number) => Number.isFinite(n) && n > 0);
+      if (!cantidades.length) return 1;
+      const menor = Math.min(...cantidades);
+      return Math.max(1, menor + 1);
+    } catch {
+      return 1;
+    }
+  }, [data?.paquetes]);
+
+  // Ajustar valor inicial respetando stock disponible
+  useEffect(() => {
+    const disp = (conteos?.disponibles ?? ((conteos?.total || 0) - (conteos?.vendidos || 0))) as number;
+    if (disp && disp > 0) {
+      const start = Math.min(Math.max(minAllowed, 1), disp);
+      setCantidadPref(start);
+      setCantidadMsg(null);
+    }
+  }, [minAllowed, conteos?.disponibles, conteos?.total, conteos?.vendidos]);
+
   return (
-    <main className="min-h-screen bg-[#0f1725] text-white">
+    <main className="min-h-screen bg-[#0f1725] text-white relative">
       {/* Partículas de fuego de fondo */}
       <FireParticles intensity="low" particleCount={25} />
       
@@ -136,17 +158,17 @@ export default function SorteoInfoPage() {
           </a>
         </div>
       </nav>
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 relative z-10">
         {loading ? (
           <div className="text-sm text-slate-400">Cargando…</div>
         ) : (
           <>
-            <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-center drop-shadow-sm reveal-up">
+            <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-center drop-shadow-sm fade-in-up">
               {data?.sorteo?.nombre}
             </h1>
             {/* Carrusel de imágenes */}
             {imagenes && imagenes.length > 0 ? (
-              <div className="mt-4 w-full rounded-xl overflow-hidden border border-white/10 bg-black/30 reveal-up zoom-in">
+              <div className="mt-4 w-full rounded-xl overflow-hidden border border-white/10 bg-black/30 zoom-in">
                 <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
                   <Carousel images={imagenes} />
                 </div>
@@ -156,10 +178,10 @@ export default function SorteoInfoPage() {
                 No hay imágenes para mostrar
               </div>
             )}
-            <p className="text-lg sm:text-xl text-slate-100/90 mt-3 tracking-wide leading-relaxed drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)] reveal-up">{data?.sorteo?.descripcion}</p>
+            <p className="text-lg sm:text-xl text-slate-100/90 mt-3 tracking-wide leading-relaxed drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)] fade-in-up">{data?.sorteo?.descripcion}</p>
             <div className="mt-4 text-sm text-slate-200">Precio por número: ${Number(data?.sorteo?.precio_por_numero || 0).toFixed(2)}</div>
             {conteos && (
-              <div className="mt-4 reveal-up">
+              <div className="mt-4 fade-in-up">
                 <div className="relative progress-container-animated">
                   <div className="progress-bar-track" style={{height:'2.3rem'}}>
                     {(() => {
@@ -184,7 +206,7 @@ export default function SorteoInfoPage() {
 
             {/* Premios (números premiados) */}
             {Array.isArray(data?.premios) && data.premios.length > 0 && (
-              <section className="mt-8 reveal-up fade-stagger">
+              <section className="mt-8 fade-stagger">
                 <h2 className="text-xl font-semibold mb-3">Premios</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   {data.premios.map((p: any) => (
@@ -237,11 +259,14 @@ export default function SorteoInfoPage() {
             ) : (
               <>
                 {/* Paquetes promocionales primero */}
-                <section className="mt-8 reveal-up fade-stagger">
+                <section className="mt-8 fade-stagger">
                   <h2 className="text-xl font-semibold mb-3">Paquetes promocionales</h2>
-                  {Array.isArray(data?.paquetes) && data.paquetes.length > 0 ? (
+                  {(() => {
+                    const disponibles = (conteos?.disponibles ?? (conteos?.total || 0) - (conteos?.vendidos || 0)) as number;
+                    const visibles = (Array.isArray(data?.paquetes) ? data.paquetes : []).filter((p: any) => Number(p.cantidad_numeros || 0) <= Number(disponibles || 0));
+                    return visibles.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                      {data.paquetes.map((p: any) => {
+                      {visibles.map((p: any) => {
                         const original = Number(data?.sorteo?.precio_por_numero || 0) * Number(p.cantidad_numeros || 0);
                         const ahorroPct = Math.max(0, Math.round((1 - Number(p.precio_total||0) / Math.max(0.01, original)) * 100));
                         const isTop1 = paquetesRank.top1 === p.id;
@@ -274,26 +299,27 @@ export default function SorteoInfoPage() {
                         );
                       })}
                     </div>
-                  ) : (
-                    <div className="text-sm text-slate-400">No hay paquetes disponibles para este sorteo.</div>
-                  )}
+                    ) : (
+                      <div className="text-sm text-slate-400">No hay paquetes disponibles para este sorteo.</div>
+                    );
+                  })()}
                 </section>
 
                 {/* Compra por cantidad después de paquetes */}
-                <div className="mt-8 flex flex-col items-center gap-4 reveal-up">
+                <div className="mt-8 flex flex-col items-center gap-4 fade-in-up">
                   <div className="flex flex-wrap items-center justify-center gap-3">
                     <label className="flex items-center gap-2">
-                      <span className="text-sm text-slate-300">Cantidad</span>
+                      <span className="text-sm text-slate-300">¿Más números?</span>
                       <input
                         type="number"
-                        min={1}
+                        min={minAllowed}
                         value={cantidadPref}
                         onChange={(e) => {
-                          const val = Math.max(1, Number(e.target.value || 1));
+                          const val = Math.max(minAllowed, Number(e.target.value || minAllowed));
                           setCantidadPref(val);
                           const disponibles = (conteos?.disponibles ?? (conteos?.total || 0) - (conteos?.vendidos || 0)) as number;
                           if (disponibles && val > disponibles) {
-                            setCantidadMsg(`Solo quedan ${disponibles} números disponibles`);
+                            setCantidadMsg('¡No tenemos esa cantidad! :(');
                           } else {
                             setCantidadMsg(null);
                           }
@@ -340,7 +366,7 @@ export default function SorteoInfoPage() {
             )}
 
             {/* Cómo participar */}
-            <section className="mt-10 p-5 sm:p-7 rounded-2xl glassy-como border border-brand-gradient shadow-xl relative overflow-hidden reveal-up">
+            <section className="mt-10 p-5 sm:p-7 rounded-2xl glassy-como border border-brand-gradient shadow-xl relative overflow-hidden fade-in-up">
               <h2 className="text-2xl font-extrabold mb-3 section-title-brand">¿Cómo participar?</h2>
               <ol className="space-y-2 text-base como-list" style={{listStyle: 'none'}}>
                 <li>Elige cuántos números deseas (¡O selecciona un paquete promocional que ya trae varios números con descuento!).</li>

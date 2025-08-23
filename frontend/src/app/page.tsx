@@ -39,12 +39,12 @@ function SmallCarousel({ images }: { images: any[] }) {
   if (!images || images.length === 0) return null;
   
   return (
-    <div className="relative w-full h-[26rem] rounded-xl overflow-hidden mb-5 group bg-black/30">
+    <div className="relative w-full h-[18rem] sm:h-[22rem] md:h-[26rem] rounded-xl overflow-hidden mb-5 group bg-black/40">
       {current && (
         <img
           src={getImageUrl(current.url)}
           alt={current.alt || "Sorteo"}
-          className="w-full h-full object-cover object-center transition-transform duration-[1600ms] ease-out group-hover:scale-[1.04]"
+          className="w-full h-full object-contain md:object-cover object-center transition-transform duration-[1600ms] ease-out group-hover:scale-[1.04]"
           loading="lazy"
           style={{imageRendering:'auto'}}
         />
@@ -315,19 +315,39 @@ export default function HomePage() {
         <div className="absolute inset-0 bg-gradient-to-b from-[#0f1725] via-[#111827] to-[#0f1725] hero-bg" />
         <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 pb-6 sm:pb-8 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 items-center">
           <div className="reveal-up fade-stagger">
-            <h1 className="text-4xl md:text-5xl font-extrabold leading-tight animate-title">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold leading-tight animate-title">
               <span className="wave-text">
-                {"¡Compra tus ".split("").map((ch, i) => (
-                  <span key={`p-${i}`} className="wave-letter" style={{ animationDelay: `${i * 0.06}s` }}>{ch === " " ? '\u00A0' : ch}</span>
-                ))}
-                {"tickets".split("").map((ch, i) => (
-                  <span key={`m-${i}`} className="wave-letter glow-pulse" style={{ animationDelay: `${("¡Compra tus ".length + i) * 0.06}s` }}>{ch}</span>
-                ))}
-                {" ahora!".split("").map((ch, i) => (
-                  <span key={`s-${i}`} className="wave-letter" style={{ animationDelay: `${("¡Compra tus ".length + "tickets".length + i) * 0.06}s` }}>{ch === " " ? '\u00A0' : ch}</span>
-                ))}
+                {(() => {
+                  const tokens = [
+                    { text: '¡Compra', glow: false },
+                    { text: 'tus', glow: false },
+                    { text: 'tickets', glow: true },
+                    { text: 'ahora!', glow: false },
+                  ];
+                  let idx = 0;
+                  return tokens.map((t, ti) => {
+                    return (
+                      <span key={`tok-${ti}`} className="wave-word">
+                        {t.text.split("").map((ch) => {
+                          const el = (
+                            <span
+                              key={`l-${idx}`}
+                              className={`wave-letter ${t.glow ? 'glow-pulse' : ''}`}
+                              style={{ animationDelay: `${idx * 0.06}s` }}
+                            >
+                              {ch}
+                            </span>
+                          );
+                          idx += 1;
+                          return el;
+                        })}
+                        {ti < tokens.length - 1 ? <span className="inline-block w-[0.3em]" /> : null}
+                      </span>
+                    );
+                  });
+                })()}
               </span>
-              <br className="hidden md:block" />
+              <br className="hidden sm:block" />
               <span className="glow-pulse" style={{ color: '#DC6B16' }}>Promos por tiempo limitado</span>
             </h1>
             <p className="mt-4 text-slate-300 fade-in-up">Elige tu sorteo favorito, compra tickets o ahorra con paquetes especiales. ¡Las cantidades vuelan!</p>
@@ -339,11 +359,11 @@ export default function HomePage() {
             </div>
           </div>
           <div className="reveal-up flex items-center justify-center zoom-in">
-            <div className="relative w-full h-full max-h-[480px] rounded-2xl overflow-hidden border border-white/10 shadow-xl group">
+            <div className="relative w-full h-full max-h-[420px] sm:max-h-[480px] rounded-2xl overflow-hidden border border-white/10 shadow-xl group">
               <img
                 src="/castromotorgif.gif"
                 alt="Promoción principal"
-                className="w-full h-full object-cover object-center transition-transform duration-[2500ms] group-hover:scale-105"
+                className="w-full h-full object-contain sm:object-cover object-center bg-black/40 transition-transform duration-[2500ms] group-hover:scale-105"
                 loading="eager"
               />
               <div className="absolute inset-0 bg-gradient-to-tr from-black/40 via-black/10 to-transparent pointer-events-none" />
@@ -352,32 +372,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Más paquetes (si hay más de 3) */}
-      {paquetesExtra.length > 0 && (
-        <section className="max-w-6xl mx-auto px-6 pb-8 reveal-up">
-          <h3 className="text-xl font-semibold mb-4">Más paquetes</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {paquetesExtra.map((p) => {
-              const original = Number(p.sorteo?.precio_por_numero || 0) * Number(p.cantidad_numeros || 0);
-              const final = Number(p.precio_total || 0);
-              return (
-                <div key={String(p.id)} className="rounded-xl bg-white/5 border border-white/10 p-4 h-full flex flex-col">
-                  <div className="space-y-1">
-                    <div className="text-[11px] uppercase tracking-wide text-slate-400 truncate">{p.sorteo?.nombre}</div>
-                    <div className="text-sm text-slate-200 font-medium break-words">{p.nombre || `${p.cantidad_numeros} tickets`}</div>
-                    <div className="text-xs font-semibold text-emerald-400">Incluye {Number(p.cantidad_numeros || 0)} tickets</div>
-                  </div>
-                  <div className="mt-3">
-                    <div className="text-rose-400 text-xl font-bold">${final.toFixed(2)}</div>
-                    <div className="text-xs text-slate-400 line-through">${original.toFixed(2)}</div>
-                  </div>
-                  <Link href={`/sorteos/${p.sorteo_id}?paqueteId=${p.id}`} className="mt-3 inline-flex w-full justify-center px-3 py-2 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-sm">Comprar</Link>
-                </div>
-              );
-            })}
-      </div>
-        </section>
-      )}
+      {/* Sección “Más paquetes” removida por solicitud */}
 
   {/* Social posts (se moverá debajo del tutorial) */}
 

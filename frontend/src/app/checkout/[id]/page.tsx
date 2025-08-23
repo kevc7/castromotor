@@ -652,7 +652,7 @@ export default function CheckoutPage() {
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold mb-2">Checkout</h1>
+        <h1 className="text-3xl font-bold mb-2">Checkout</h1>
             <p className="text-slate-400">Completa tu compra paso a paso</p>
           </div>
         <StepIndicator />
@@ -693,7 +693,7 @@ export default function CheckoutPage() {
                     }}
                   />
                   {errors.cedula && <span className="text-[11px] text-rose-400 checkout-error-text">{errors.cedula}</span>}
-                </label>
+                  </label>
 
                 {/* Teléfono */}
                 <label className="grid gap-1">
@@ -866,7 +866,7 @@ export default function CheckoutPage() {
                   {showPayphoneInline && (
                     <div className="rounded-xl border border-white/10 bg-white/5 p-4 payphone-inline-container">
                       <div id="pp-inline" />
-                    </div>
+                  </div>
                   )}
                   {payphoneMsg && <div className="text-xs text-emerald-600 [data-theme='dark']:text-emerald-300 checkout-success">{payphoneMsg}</div>}
                   <p className="text-[10px] text-slate-500 checkout-help-text">Si tu pago es aprobado serás redirigido automáticamente y recibirás un correo de confirmación.</p>
@@ -905,7 +905,7 @@ export default function CheckoutPage() {
                   <button onClick={() => router.push(`/sorteos/${sorteoId}/info`)} className="px-5 py-2 rounded-md text-sm btn-secondary">Volver al sorteo</button>
                 </div>
               )}
-              {result?.modo === 'payphone' && result.estado === 'fallido' && (
+        {result?.modo === 'payphone' && result.estado === 'fallido' && (
                 <div className="space-y-4">
                   <div className="alert alert-error text-sm checkout-error">
                     El pago no se completó {result.reason && `(motivo: ${result.reason})`}. Puedes intentar nuevamente.
@@ -938,7 +938,7 @@ export default function CheckoutPage() {
           </section>
         )}
       </div>
-    </div>
+      </div>
     </main>
   );
 }
