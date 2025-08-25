@@ -185,9 +185,10 @@ export default function SorteoInfoPage() {
             <p className="text-lg sm:text-xl text-slate-100/90 mt-3 tracking-wide leading-relaxed drop-shadow-[0_1px_1px_rgba(0,0,0,0.4)] fade-in-up">{data?.sorteo?.descripcion}</p>
             <div className="mt-4 text-sm text-slate-200 price-per-number">Precio por número: ${Number(data?.sorteo?.precio_por_numero || 0).toFixed(2)}</div>
             {conteos && (
-              <div className="mt-4 fade-in-up">
-                <div className="relative progress-container-animated">
-                  <div className="progress-bar-track" style={{height:'2.3rem'}}>
+              <>
+                <div className="mt-4 fade-in-up">
+                  <div className="relative progress-container-animated">
+                    <div className="progress-bar-track" style={{height:'2.3rem'}}>
                     {(() => {
                       const pct = progressAnimated;
                       // Brand-friendly gradient steps
@@ -202,10 +203,12 @@ export default function SorteoInfoPage() {
                         />
                       );
                     })()}
-                    <span className="progress-badge" style={{fontSize:'0.72rem'}}>{Math.round(progressAnimated)}% completado</span>
+                      <span className="progress-badge" style={{fontSize:'0.72rem'}}>{Math.round(progressAnimated)}% completado</span>
+                    </div>
                   </div>
                 </div>
-              </div>
+                <div className="mt-2 text-center text-xs text-slate-400">Nota: Los premios de este sorteo se jugarán cuando se vendan todos los números (barra al 100%). Se tomarán los últimos {Number(data?.sorteo?.cantidad_digitos || 0)} dígitos de la primera, segunda y tercera suertes de la Lotería Nacional del Ecuador.</div>
+              </>
             )}
 
             {/* Premios (números premiados) */}

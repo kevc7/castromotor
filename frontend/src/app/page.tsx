@@ -419,6 +419,9 @@ export default function HomePage() {
                       <span className="progress-badge">{Math.round(vendidosPct)}% completado</span>
                     </div>
                   </div>
+                  <div className="mt-2 text-center text-xs text-slate-400">
+                    Nota: Los premios de este sorteo se jugarán cuando se vendan todos los números (barra al 100%). Se tomarán los últimos {s.cantidad_digitos ?? s?.conteos?.cantidad_digitos ?? 0} dígitos de la primera, segunda y tercera suertes de la Lotería Nacional del Ecuador.
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
                   {s.premios?.map((p: any) => (
