@@ -79,7 +79,7 @@ export default function SorteoInfoPage() {
         const premios = (gData.sorteos || []).find((s: any) => String(s.id) === String(id))?.premios || [];
         setData({ ...(sData || {}), premios });
         setImagenes(sData?.imagenes || []);
-        console.log('Sorteo info data received:', sData);
+        // console.debug('Sorteo info data received:', sData);
       } finally {
         setLoading(false);
       }

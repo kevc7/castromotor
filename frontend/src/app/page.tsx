@@ -307,8 +307,8 @@ export default function HomePage() {
       <FireParticles intensity="low" particleCount={30} />
       
       {/* Navbar fijo siempre arriba */}
-      <nav className="fixed top-0 left-0 w-full z-50 bg-[#0f1725]/90 backdrop-blur supports-[backdrop-filter]:bg-[#0f1725]/60 border-b border-white/10 home-navbar">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between pl-20 sm:pl-24 md:pl-32">
+      <nav className="fixed top-0 left-0 w-full z-50 bg-[#0f1725]/90 backdrop-blur supports-[backdrop-filter]:bg-[#0f1725]/60 border-b border-white/10 home-navbar h-14 sm:h-16">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-full py-0 flex items-center justify-between pl-20 sm:pl-24 md:pl-32">
           <div className="text-sm text-white/80 brand">Castromotor</div>
           <div className="flex items-center gap-4 text-sm">
             <a href="#ganadores" className="text-white/80 hover:text-white">Ganadores</a>
@@ -319,8 +319,10 @@ export default function HomePage() {
           </div>
         </div>
       </nav>
+      {/* Separador para evitar solapamiento con navbar fijo */}
+      <div aria-hidden className="h-14 sm:h-16" />
       {/* Hero */}
-      <section className="relative overflow-hidden pt-20 sm:pt-24 reveal-up is-visible">
+      <section className="relative overflow-hidden pt-2 sm:pt-4 reveal-up is-visible">
         <div className="absolute inset-0 bg-gradient-to-b from-[#0f1725] via-[#111827] to-[#0f1725] hero-bg" />
         <div className="relative max-w-6xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 pb-6 sm:pb-8 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 items-center">
           <div className="reveal-up fade-stagger">
