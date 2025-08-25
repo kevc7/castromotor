@@ -24,6 +24,8 @@ export default function NumerosVendidosPage() {
   const [sorteos, setSorteos] = useState<{ id: string; nombre: string }[]>([]);
   const [sorteoId, setSorteoId] = useState<string>("");
   const [q, setQ] = useState("");
+  const pageSize = 100;
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     // cargar sorteos para el filtro
@@ -50,6 +52,7 @@ export default function NumerosVendidosPage() {
       if (r.status === 401) { window.location.href = '/admin/login'; return; }
       const data = await r.json();
       setRows(data?.numeros || []);
+      setPage(1);
     } finally {
       setLoading(false);
     }
@@ -58,6 +61,11 @@ export default function NumerosVendidosPage() {
   useEffect(() => { fetchRows(); }, []);
 
   const filtered = useMemo(() => rows, [rows]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const end = start + pageSize;
+  const paginated = filtered.slice(start, end);
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-[#0f1725] to-[#0b1220] text-white">
@@ -87,7 +95,7 @@ export default function NumerosVendidosPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/10 overflow-hidden">
+        <div className="rounded-xl border border-white/10 overflow-auto max-h-[70vh]">
           <table className="w-full text-sm">
             <thead className="bg-black/40">
               <tr className="text-left text-slate-300">
@@ -103,10 +111,10 @@ export default function NumerosVendidosPage() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-slate-400">Sin resultados</td>
+                  <td colSpan={7} className="px-3 py-6 text-center text-slate-400">Sin resultados</td>
                 </tr>
               )}
-              {filtered.map((r) => (
+              {paginated.map((r) => (
                 <tr key={String(r.id)} className="odd:bg-white/[.03]">
                   <td className="px-3 py-2 font-mono">{r.numero_texto}</td>
                   <td className="px-3 py-2">{[r.cliente_nombres, r.cliente_apellidos].filter(Boolean).join(' ') || '—'}</td>
@@ -119,6 +127,18 @@ export default function NumerosVendidosPage() {
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Paginación */}
+        <div className="flex items-center justify-between text-sm text-slate-300">
+          <div>
+            Mostrando {filtered.length === 0 ? 0 : start + 1}–{Math.min(end, filtered.length)} de {filtered.length}
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1 rounded-md border border-white/10 bg-white/5 disabled:opacity-50">Anterior</button>
+            <span>Página {currentPage} / {totalPages}</span>
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="px-3 py-1 rounded-md border border-white/10 bg-white/5 disabled:opacity-50">Siguiente</button>
+          </div>
         </div>
       </div>
     </main>

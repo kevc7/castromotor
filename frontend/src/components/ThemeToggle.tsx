@@ -8,7 +8,7 @@ function applyTheme(theme: "light" | "dark") {
   document.documentElement.dataset.theme = theme;
 }
 
-export default function ThemeToggle() {
+export default function ThemeToggle({ variant = "floating" }: { variant?: "floating" | "inline" }) {
   const pathname = usePathname();
   const isAdmin = pathname?.startsWith("/admin") ?? false;
   const [theme, setTheme] = useState<"light" | "dark">("dark");
@@ -46,21 +46,29 @@ export default function ThemeToggle() {
 
   // Evitar hydration mismatch - no renderizar hasta que esté montado en el cliente
   if (!mounted) {
-    return (
-      <div className="fixed right-4 top-4 z-[60] inline-flex items-center gap-2 px-3 py-2 rounded-full shadow-md theme-toggle opacity-0">
-        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/30">
-          <div className="h-3.5 w-3.5" />
-        </span>
-        <span className="text-sm font-medium">Tema</span>
-      </div>
-    );
+    if (variant === "floating") {
+      return (
+        <div className="fixed right-4 top-20 sm:top-4 z-[60] inline-flex items-center gap-2 px-3 py-2 rounded-full shadow-md theme-toggle opacity-0">
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/30">
+            <div className="h-3.5 w-3.5" />
+          </span>
+          <span className="text-sm font-medium">Tema</span>
+        </div>
+      );
+    }
+    // inline: no placeholder para no empujar layout
+    return null;
   }
+
+  const baseClasses = "inline-flex items-center gap-2 px-3 py-2 rounded-full shadow-md theme-toggle transition-opacity duration-300 opacity-100";
+  const positionClasses = variant === "floating" ? "fixed right-4 top-20 sm:top-4 z-[60]" : "relative z-[1]";
+  const classes = `${positionClasses} ${baseClasses}`;
 
   return (
     <button
       onClick={toggle}
       aria-label={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-      className="fixed right-4 top-4 z-[60] inline-flex items-center gap-2 px-3 py-2 rounded-full shadow-md theme-toggle transition-opacity duration-300 opacity-100"
+      className={classes}
     >
       <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/30">
         {theme === "dark" ? (

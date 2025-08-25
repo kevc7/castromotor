@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import ThemeToggle from "@/components/ThemeToggle";
 import FireParticles from "@/components/FireParticles";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001";
@@ -209,7 +210,7 @@ export default function HomePage() {
 
   useEffect(() => {
     attachRevealObserver();
-  }, [sorteos, paquetes, ganadores]);
+  }, [sorteos, paquetes, ganadores, socialPosts]);
 
   // Ganadores: aplanar premios vendidos con cliente
   const winners = useMemo(() => {
@@ -241,6 +242,11 @@ export default function HomePage() {
       }, 8000);
       return () => clearInterval(t);
     }, [total]);
+    // Forzar visibilidad si el observer no marca la sección en algunos navegadores
+    useEffect(() => {
+      const sec = document.getElementById('social');
+      if (sec) sec.classList.add('is-visible');
+    }, [total]);
     if (!total) {
       return (
         <section className="max-w-6xl mx-auto px-6 pb-24 reveal-up" id="social">
@@ -258,7 +264,7 @@ export default function HomePage() {
       visibles = base.concat(wrap);
     }
     return (
-      <section className="max-w-6xl mx-auto px-6 pb-24 reveal-up" id="social">
+      <section className="max-w-6xl mx-auto px-6 pb-24 reveal-up is-visible" id="social">
         <h2 className="text-2xl font-bold mb-6 section-title">Publicaciones</h2>
         <div className="relative">
           <div className="flex gap-6 overflow-hidden">
@@ -307,6 +313,9 @@ export default function HomePage() {
           <div className="flex items-center gap-4 text-sm">
             <a href="#ganadores" className="text-white/80 hover:text-white">Ganadores</a>
             <a href="#sorteos-premiados" className="text-white/80 hover:text-white">Sorteos</a>
+            <div className="ml-2">
+              <ThemeToggle variant="inline" />
+            </div>
           </div>
         </div>
       </nav>
@@ -566,8 +575,8 @@ export default function HomePage() {
                 <a href="#ganadores" className="block text-sm text-slate-300 hover:text-white transition-colors muted">
                   Ganadores
                 </a>
-                <a href="/admin" className="block text-sm text-slate-300 hover:text-white transition-colors muted">
-                  Panel administrativo
+                <a href="/terminos-condiciones" className="block text-sm text-slate-300 hover:text-white transition-colors muted">
+                  Términos y Condiciones
                 </a>
               </div>
             </div>

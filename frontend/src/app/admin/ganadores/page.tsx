@@ -89,8 +89,13 @@ export default function GanadoresPage() {
   return (
     <main className="min-h-screen bg-[#0f1725] text-white">
       <div className="px-6 pt-8 pb-6 max-w-6xl mx-auto">
-        <h1 className="text-2xl font-bold">Ganadores</h1>
-        <p className="text-slate-300 mt-1">Ver ganadores de premios instantáneos, contactarlos, publicar ganadores en página principal.</p>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">Ganadores</h1>
+            <p className="text-slate-300 mt-1">Ver ganadores de premios instantáneos, contactarlos, publicar ganadores en página principal.</p>
+          </div>
+          <a href="/admin" className="px-3 py-2 rounded-md border border-white/10 bg-white/5 hover:bg-white/10 text-sm whitespace-nowrap">← Volver al panel</a>
+        </div>
 
         <div className="mt-5 flex gap-2 items-center">
           <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por nombre, correo, sorteo, número..." className="w-full md:w-96 border border-white/10 bg-black/30 rounded-md px-3 py-2 text-white text-sm" />
@@ -99,7 +104,7 @@ export default function GanadoresPage() {
 
         {message && <div className="mt-3 text-sm p-3 rounded border border-white/10 bg-white/5">{message}</div>}
 
-        <div className="mt-6 rounded-xl border border-white/10 bg-white/5 overflow-auto">
+        <div className="mt-6 rounded-xl border border-white/10 bg-white/5 overflow-auto max-h-[70vh]">
           <table className="w-full text-sm">
             <thead className="bg-white/5">
               <tr>

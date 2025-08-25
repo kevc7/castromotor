@@ -111,11 +111,14 @@ export default function SocialPostsAdmin() {
       <div className="max-w-4xl mx-auto">
         
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold mb-2">Gestión de Publicaciones</h1>
-          <p className="text-slate-300 text-sm">
-            Gestiona las publicaciones que aparecen en la página principal.
-          </p>
+        <div className="mb-8 flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold mb-2">Gestión de Publicaciones</h1>
+            <p className="text-slate-300 text-sm">
+              Gestiona las publicaciones que aparecen en la página principal.
+            </p>
+          </div>
+          <a href="/admin" className="px-3 py-2 rounded-md border border-white/10 bg-white/5 hover:bg-white/10 text-sm whitespace-nowrap">← Volver al panel</a>
         </div>
 
         {/* Tabs */}

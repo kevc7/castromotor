@@ -134,6 +134,10 @@ body {
 /* Theme toggle appearance */
 .theme-toggle { background: linear-gradient(90deg,#1f2937,#111827); color:#fff; border:1px solid rgba(255,255,255,0.12); }
 [data-theme="light"] .theme-toggle { background: linear-gradient(90deg,#ffffff,#f3f4f6); color:#111827; border:1px solid rgba(0,0,0,0.08); }
+@media (max-width: 640px) {
+  /* asegurar que nunca tape el navbar en móviles */
+  .theme-toggle { margin-top: 3.5rem; }
+}
 
 /* Hero gradient adapts in light mode */
 [data-theme="light"] .hero-bg { background: linear-gradient(180deg,#eef2f7,#e6edf5,#eef2f7) !important; }
@@ -386,6 +390,12 @@ button:disabled, [aria-disabled="true"], .disabled {
   pointer-events:none; white-space:nowrap;
 }
 .progress-container-animated .progress-bar-fill { animation: progress-shimmer 3.5s linear infinite, progress-pulse-glow 5.8s ease-in-out infinite; }
+
+/* Price per number text visibility in light mode */
+[data-theme="light"] .client-surface .price-per-number {
+  color: #0b1320 !important;
+  font-weight: 700 !important;
+}
 
 /* ===================== */
 /*  CHECKOUT IMPROVEMENTS  */

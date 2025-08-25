@@ -105,8 +105,9 @@ export default function AdminPaquetesPage() {
   function onDescuentoChange(raw: string) {
     const valStr = sanitizeDescuento(raw);
     if (valStr === "") {
+      // Tratar vacío como 0% sin marcar error
       setForm({ ...form, porcentaje_descuento: 0 });
-      setErrDescuento('Ingresa un porcentaje válido (0–100)');
+      setErrDescuento(null);
       return;
     }
     const n = Math.max(0, Math.min(100, Number(valStr)));
@@ -228,7 +229,7 @@ export default function AdminPaquetesPage() {
                 inputMode="numeric"
                 pattern="\\d*"
                 className={`border rounded-md px-3 py-2 text-white bg-black/30 ${errDescuento ? 'border-rose-500/50 ring-1 ring-rose-500/40' : 'border-white/10'}`}
-                value={form.porcentaje_descuento || ''}
+                value={String(form.porcentaje_descuento ?? 0)}
                 onChange={(e) => onDescuentoChange(e.target.value)}
                 placeholder="0–100"
                 maxLength={3}

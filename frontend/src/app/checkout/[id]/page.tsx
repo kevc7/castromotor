@@ -200,7 +200,8 @@ export default function CheckoutPage() {
     }
   }
 
-  const canNextFromStep1 = isVerified && Object.keys(errors).length === 0;
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const canNextFromStep1 = isVerified && Object.keys(errors).length === 0 && acceptedTerms;
   const bancos = useMemo(() => metodos.filter(m => (m.nombre || '').toLowerCase() !== 'payphone' && (m.tipo || '').includes('transfer')), [metodos]);
   const metodoPayphoneDisponible = metodos.some(m => (m.nombre || '').toLowerCase() === 'payphone');
 
@@ -758,6 +759,12 @@ export default function CheckoutPage() {
                       {isVerified ? '✓ Verificado' : verifying ? 'Verificando…' : 'Verificar'}
                     </button>
                   </div>
+                </label>
+              </div>
+              <div className="mt-4">
+                <label className="flex items-start gap-3 text-sm">
+                  <input type="checkbox" checked={acceptedTerms} onChange={(e)=> setAcceptedTerms(e.target.checked)} className="mt-1" />
+                  <span>Acepto los <a href="/terminos-condiciones" target="_blank" className="underline text-rose-300 hover:text-rose-200">Términos y Condiciones</a>.</span>
                 </label>
               </div>
               <div className="mt-6 flex justify-between gap-2">

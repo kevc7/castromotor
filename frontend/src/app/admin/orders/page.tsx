@@ -21,6 +21,8 @@ export default function AdminOrdersPage() {
   const [loading, setLoading] = useState(false);
   const [ordenes, setOrdenes] = useState<Orden[]>([]);
   const [historial, setHistorial] = useState<Orden[]>([]);
+  const pageSizeHist = 100;
+  const [pageHist, setPageHist] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [stats, setStats] = useState<any>(null);
@@ -90,6 +92,7 @@ export default function AdminOrdersPage() {
       if (res.status === 401) { window.location.href = '/admin/login'; return; }
       const data = await res.json();
       setHistorial(data.ordenes || []);
+      setPageHist(1);
     } catch (e: any) {
       showMessage('error', e?.message || 'Error cargando historial');
     } finally {
@@ -104,6 +107,13 @@ export default function AdminOrdersPage() {
     if (searchCodigo && !(o.codigo||'').toLowerCase().includes(searchCodigo.toLowerCase())) return false;
     return true;
   });
+
+  // Paginación para historial
+  const totalPagesHist = Math.max(1, Math.ceil(filteredHistorial.length / pageSizeHist));
+  const currentHist = Math.min(pageHist, totalPagesHist);
+  const startHist = (currentHist - 1) * pageSizeHist;
+  const endHist = startHist + pageSizeHist;
+  const paginatedHistorial = filteredHistorial.slice(startHist, endHist);
 
   async function aprobar(ordenId: string | number) {
     const orderKey = String(ordenId);
@@ -331,7 +341,7 @@ export default function AdminOrdersPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-3">
+        <div className="grid grid-cols-1 gap-3 max-h-[70vh] overflow-auto pr-1">
           {loading && (
             <div className="flex items-center justify-center py-8">
               <div className="flex items-center gap-3 text-slate-400">
@@ -346,7 +356,7 @@ export default function AdminOrdersPage() {
           {!loading && viewMode==='historial' && filteredHistorial.length === 0 && (
             <div className="text-center py-8 text-slate-400"><div className="text-4xl mb-2">🗂️</div><div className="text-sm">Sin resultados para los filtros.</div></div>
           )}
-          {(viewMode==='pendientes' ? ordenes.filter(o => soloPayphone ? ((o.metodo_pago||'').toLowerCase()==='payphone') : ((o.metodo_pago||'').toLowerCase()!=='payphone')) : filteredHistorial).map((o) => {
+          {(viewMode==='pendientes' ? ordenes.filter(o => soloPayphone ? ((o.metodo_pago||'').toLowerCase()==='payphone') : ((o.metodo_pago||'').toLowerCase()!=='payphone')) : paginatedHistorial).map((o) => {
             const orderKey = String(o.id);
             const isProcessing = loadingStates[orderKey] || processingOrder === orderKey;
             const isDisabled = isProcessing || processingOrder !== null;
@@ -436,6 +446,18 @@ export default function AdminOrdersPage() {
             );
           })}
         </div>
+        {viewMode==='historial' && (
+          <div className="flex items-center justify-between text-sm text-slate-300 mt-2">
+            <div>
+              Mostrando {filteredHistorial.length === 0 ? 0 : startHist + 1}–{Math.min(endHist, filteredHistorial.length)} de {filteredHistorial.length}
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setPageHist(p => Math.max(1, p - 1))} disabled={currentHist === 1} className="px-3 py-1 rounded-md border border-white/10 bg-white/5 disabled:opacity-50">Anterior</button>
+              <span>Página {currentHist} / {totalPagesHist}</span>
+              <button onClick={() => setPageHist(p => Math.min(totalPagesHist, p + 1))} disabled={currentHist === totalPagesHist} className="px-3 py-1 rounded-md border border-white/10 bg-white/5 disabled:opacity-50">Siguiente</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {rejectOpen && (
